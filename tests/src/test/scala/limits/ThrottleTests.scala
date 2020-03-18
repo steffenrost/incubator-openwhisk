@@ -18,6 +18,7 @@
 package limits
 
 import java.time.Instant
+import java.util.UUID
 
 import akka.http.scaladsl.model.StatusCodes.TooManyRequests
 
@@ -169,124 +170,150 @@ class ThrottleTests
   behavior of "Throttles"
 
   it should "throttle multiple activations of one action" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
-    val name = "checkPerMinuteActionThrottle"
-    assetHelper.withCleaner(wsk.action, name) { (action, _) =>
-      action.create(name, defaultAction)
-    }
+    org.apache.openwhisk.utils
+      .retry(
+        {
+          val name = "checkPerMinuteActionThrottle-" + UUID.randomUUID().toString()
+          assetHelper.withCleaner(wsk.action, name) { (action, _) =>
+            action.create(name, defaultAction)
+          }
 
-    // Three things to be careful of:
-    //   1) We do not know the minute boundary so we perform twice max so that it will trigger no matter where they fall
-    //   2) We cannot issue too quickly or else the concurrency throttle will be triggered
-    //   3) In the worst case, we do about almost the limit in the first min and just exceed the limit in the second min.
-    val totalInvokes = 2 * maximumInvokesPerMinute
-    val numGroups = (totalInvokes / maximumConcurrentInvokes) + 1
-    val invokesPerGroup = (totalInvokes / numGroups) + 1
-    val interGroupSleep = 5.seconds
-    val results = (1 to numGroups).flatMap { i =>
-      if (i != 1) { Thread.sleep(interGroupSleep.toMillis) }
-      untilThrottled(invokesPerGroup) { () =>
-        wsk.action.invoke(name, Map("payload" -> "testWord".toJson), expectedExitCode = DONTCARE_EXIT)
-      }
-    }.toList
-    val afterInvokes = Instant.now
+          // Three things to be careful of:
+          //   1) We do not know the minute boundary so we perform twice max so that it will trigger no matter where they fall
+          //   2) We cannot issue too quickly or else the concurrency throttle will be triggered
+          //   3) In the worst case, we do about almost the limit in the first min and just exceed the limit in the second min.
+          val totalInvokes = 2 * maximumInvokesPerMinute
+          val numGroups = (totalInvokes / maximumConcurrentInvokes) + 1
+          val invokesPerGroup = (totalInvokes / numGroups) + 1
+          val interGroupSleep = 5.seconds
+          val results = (1 to numGroups).flatMap { i =>
+            if (i != 1) { Thread.sleep(interGroupSleep.toMillis) }
+            untilThrottled(invokesPerGroup) { () =>
+              wsk.action.invoke(name, Map("payload" -> "testWord".toJson), expectedExitCode = DONTCARE_EXIT)
+            }
+          }.toList
+          val afterInvokes = Instant.now
 
-    try {
-      val throttledCount = throttledActivations(results, tooManyRequests(0, 0))
-      throttledCount should be > 0
-    } finally {
-      val alreadyWaited = durationBetween(afterInvokes, Instant.now)
-      settleThrottles(alreadyWaited)
-      println("clearing activations")
-    }
-    // wait for the activations last, if these fail, the throttle should be settled
-    // and this gives the activations time to complete and may avoid unnecessarily polling
-    println("waiting for activations to complete")
-    waitForActivations(results.par)
+          try {
+            val throttledCount = throttledActivations(results, tooManyRequests(0, 0))
+            throttledCount should be > 0
+          } finally {
+            val alreadyWaited = durationBetween(afterInvokes, Instant.now)
+            settleThrottles(alreadyWaited)
+            println("clearing activations")
+          }
+          // wait for the activations last, if these fail, the throttle should be settled
+          // and this gives the activations time to complete and may avoid unnecessarily polling
+          println("waiting for activations to complete")
+          waitForActivations(results.par)
+        },
+        10,
+        Some(1.second),
+        Some(
+          s"limits.ThrottleTests.Throttles.should throttle multiple activations of one action not successful, retrying.."))
   }
 
   it should "throttle multiple activations of one trigger" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
-    val name = "checkPerMinuteTriggerThrottle"
-    assetHelper.withCleaner(wsk.trigger, name) { (trigger, _) =>
-      trigger.create(name)
-    }
+    org.apache.openwhisk.utils
+      .retry(
+        {
+          val name = "checkPerMinuteTriggerThrottle-" + UUID.randomUUID().toString()
+          assetHelper.withCleaner(wsk.trigger, name) { (trigger, _) =>
+            trigger.create(name)
+          }
 
-    // invokes per minute * 2 because the current minute could advance which resets the throttle
-    val results = untilThrottled(maximumFiringsPerMinute * 2 + 1) { () =>
-      wsk.trigger.fire(name, Map("payload" -> "testWord".toJson), expectedExitCode = DONTCARE_EXIT)
-    }
-    val afterFirings = Instant.now
+          // invokes per minute * 2 because the current minute could advance which resets the throttle
+          val results = untilThrottled(maximumFiringsPerMinute * 2 + 1) { () =>
+            wsk.trigger.fire(name, Map("payload" -> "testWord".toJson), expectedExitCode = DONTCARE_EXIT)
+          }
+          val afterFirings = Instant.now
 
-    try {
-      val throttledCount = throttledActivations(results, tooManyRequests(0, 0))
-      throttledCount should be > 0
-    } finally {
-      // no need to wait for activations of triggers since they consume no resources
-      // (because there is no rule attached in this test)
-      val alreadyWaited = durationBetween(afterFirings, Instant.now)
-      settleThrottles(alreadyWaited)
-    }
+          try {
+            val throttledCount = throttledActivations(results, tooManyRequests(0, 0))
+            throttledCount should be > 0
+          } finally {
+            // no need to wait for activations of triggers since they consume no resources
+            // (because there is no rule attached in this test)
+            val alreadyWaited = durationBetween(afterFirings, Instant.now)
+            settleThrottles(alreadyWaited)
+          }
+        },
+        10,
+        Some(1.second),
+        Some(
+          s"limits.ThrottleTests.Throttles.should throttle multiple activations of one trigger not successful, retrying.."))
   }
 
   it should "throttle 'concurrent' activations of one action" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
-    val name = "checkConcurrentActionThrottle"
-    assetHelper.withCleaner(wsk.action, name) {
-      val timeoutAction = Some(TestUtils.getTestActionFilename("sleep.js"))
-      (action, _) =>
-        action.create(name, timeoutAction)
-    }
+    org.apache.openwhisk.utils
+      .retry(
+        {
+          val name = "checkConcurrentActionThrottle-" + UUID.randomUUID().toString()
+          assetHelper.withCleaner(wsk.action, name) {
+            val timeoutAction = Some(TestUtils.getTestActionFilename("sleep.js"))
+            (action, _) =>
+              action.create(name, timeoutAction)
+          }
 
-    // The sleep is necessary as the load balancer currently has a latency before recognizing concurrency.
-    val sleep = 15.seconds
-    // Adding a bit of overcommit since some loadbalancers rely on some overcommit. This won't hurt those who don't
-    // since all activations are taken into account to check for throttled invokes below.
-    val slowInvokes = (maximumConcurrentInvokes * 1.2).toInt
-    val fastInvokes = 4
-    val fastInvokeDuration = 4.seconds
-    val slowInvokeDuration = sleep + fastInvokeDuration
+          // The sleep is necessary as the load balancer currently has a latency before recognizing concurrency.
+          val sleep = 15.seconds
+          // Adding a bit of overcommit since some loadbalancers rely on some overcommit. This won't hurt those who don't
+          // since all activations are taken into account to check for throttled invokes below.
+          val slowInvokes = (maximumConcurrentInvokes * 1.2).toInt
+          val fastInvokes = 4
+          val fastInvokeDuration = 4.seconds
+          val slowInvokeDuration = sleep + fastInvokeDuration
 
-    // These invokes will stay active long enough that all are issued and load balancer has recognized concurrency.
-    val startSlowInvokes = Instant.now
-    val slowResults = untilThrottled(slowInvokes) { () =>
-      wsk.action.invoke(
-        name,
-        Map("sleepTimeInMs" -> slowInvokeDuration.toMillis.toJson),
-        expectedExitCode = DONTCARE_EXIT)
-    }
-    val afterSlowInvokes = Instant.now
-    val slowIssueDuration = durationBetween(startSlowInvokes, afterSlowInvokes)
-    println(
-      s"$slowInvokes slow invokes (dur = ${slowInvokeDuration.toSeconds} sec) took ${slowIssueDuration.toSeconds} seconds to issue")
+          // These invokes will stay active long enough that all are issued and load balancer has recognized concurrency.
+          val startSlowInvokes = Instant.now
+          val slowResults = untilThrottled(slowInvokes) { () =>
+            wsk.action
+              .invoke(
+                name,
+                Map("sleepTimeInMs" -> slowInvokeDuration.toMillis.toJson),
+                expectedExitCode = DONTCARE_EXIT)
+          }
+          val afterSlowInvokes = Instant.now
+          val slowIssueDuration = durationBetween(startSlowInvokes, afterSlowInvokes)
+          println(
+            s"$slowInvokes slow invokes (dur = ${slowInvokeDuration.toSeconds} sec) took ${slowIssueDuration.toSeconds} seconds to issue")
 
-    // Sleep to let the background thread get the newest values (refreshes every 2 seconds)
-    println(s"Sleeping for ${sleep.toSeconds} sec")
-    Thread.sleep(sleep.toMillis)
+          // Sleep to let the background thread get the newest values (refreshes every 2 seconds)
+          println(s"Sleeping for ${sleep.toSeconds} sec")
+          Thread.sleep(sleep.toMillis)
 
-    // These fast invokes will trigger the concurrency-based throttling.
-    val startFastInvokes = Instant.now
-    val fastResults = untilThrottled(fastInvokes) { () =>
-      wsk.action.invoke(
-        name,
-        Map("sleepTimeInMs" -> fastInvokeDuration.toMillis.toJson),
-        expectedExitCode = DONTCARE_EXIT)
-    }
-    val afterFastInvokes = Instant.now
-    val fastIssueDuration = durationBetween(afterFastInvokes, startFastInvokes)
-    println(
-      s"$fastInvokes fast invokes (dur = ${fastInvokeDuration.toSeconds} sec) took ${fastIssueDuration.toSeconds} seconds to issue")
+          // These fast invokes will trigger the concurrency-based throttling.
+          val startFastInvokes = Instant.now
+          val fastResults = untilThrottled(fastInvokes) { () =>
+            wsk.action
+              .invoke(
+                name,
+                Map("sleepTimeInMs" -> fastInvokeDuration.toMillis.toJson),
+                expectedExitCode = DONTCARE_EXIT)
+          }
+          val afterFastInvokes = Instant.now
+          val fastIssueDuration = durationBetween(afterFastInvokes, startFastInvokes)
+          println(
+            s"$fastInvokes fast invokes (dur = ${fastInvokeDuration.toSeconds} sec) took ${fastIssueDuration.toSeconds} seconds to issue")
 
-    val combinedResults = slowResults ++ fastResults
-    try {
-      val throttledCount = throttledActivations(combinedResults, tooManyConcurrentRequests(0, 0))
-      throttledCount should be > 0
-    } finally {
-      val alreadyWaited = durationBetween(afterSlowInvokes, Instant.now)
-      settleThrottles(alreadyWaited)
-      println("clearing activations")
-    }
-    // wait for the activations last, giving the activations time to complete and
-    // may avoid unnecessarily polling; if these fail, the throttle may not be settled
-    println("waiting for activations to complete")
-    waitForActivations(combinedResults.par)
+          val combinedResults = slowResults ++ fastResults
+          try {
+            val throttledCount = throttledActivations(combinedResults, tooManyConcurrentRequests(0, 0))
+            throttledCount should be > 0
+          } finally {
+            val alreadyWaited = durationBetween(afterSlowInvokes, Instant.now)
+            settleThrottles(alreadyWaited)
+            println("clearing activations")
+          }
+          // wait for the activations last, giving the activations time to complete and
+          // may avoid unnecessarily polling; if these fail, the throttle may not be settled
+          println("waiting for activations to complete")
+          waitForActivations(combinedResults.par)
+        },
+        10,
+        Some(1.second),
+        Some(
+          s"limits.ThrottleTests.Throttles.should throttle 'concurrent' activations of one action not successful, retrying.."))
   }
 }
 
@@ -357,134 +384,169 @@ class NamespaceSpecificThrottleTests
   behavior of "Namespace-specific throttles"
 
   it should "respect overridden rate-throttles of 0" in withAssetCleaner(zeroProps) { (wp, assetHelper) =>
-    implicit val props = wp
-    val triggerName = "zeroTrigger"
-    val actionName = "zeroAction"
+    org.apache.openwhisk.utils
+      .retry(
+        {
+          implicit val props = wp
+          val triggerName = "zeroTrigger" + UUID.randomUUID().toString()
+          val actionName = "zeroAction-" + UUID.randomUUID().toString()
 
-    assetHelper.withCleaner(wsk.action, actionName) { (action, _) =>
-      action.create(actionName, defaultAction)
-    }
-    assetHelper.withCleaner(wsk.trigger, triggerName) { (trigger, _) =>
-      trigger.create(triggerName)
-    }
+          assetHelper.withCleaner(wsk.action, actionName) { (action, _) =>
+            action.create(actionName, defaultAction)
+          }
+          assetHelper.withCleaner(wsk.trigger, triggerName) { (trigger, _) =>
+            trigger.create(triggerName)
+          }
 
-    wsk.action.invoke(actionName, expectedExitCode = TooManyRequests.intValue).stderr should {
-      include(prefix(tooManyRequests(0, 0))) and include("allowed: 0")
-    }
-    wsk.trigger.fire(triggerName, expectedExitCode = TooManyRequests.intValue).stderr should {
-      include(prefix(tooManyRequests(0, 0))) and include("allowed: 0")
-    }
+          wsk.action.invoke(actionName, expectedExitCode = TooManyRequests.intValue).stderr should {
+            include(prefix(tooManyRequests(0, 0))) and include("allowed: 0")
+          }
+          wsk.trigger.fire(triggerName, expectedExitCode = TooManyRequests.intValue).stderr should {
+            include(prefix(tooManyRequests(0, 0))) and include("allowed: 0")
+          }
+        },
+        10,
+        Some(1.second),
+        Some(
+          s"limits.ThrottleTests.Namespace-specific throttles.should respect overridden rate-throttles of 0 not successful, retrying.."))
   }
 
   it should "respect overridden rate-throttles of 1" in withAssetCleaner(oneProps) { (wp, assetHelper) =>
-    implicit val props = wp
-    val triggerName = "oneTrigger"
-    val actionName = "oneAction"
+    org.apache.openwhisk.utils
+      .retry(
+        {
+          implicit val props = wp
+          val triggerName = "oneTrigger-" + UUID.randomUUID().toString()
+          val actionName = "oneAction-" + UUID.randomUUID().toString()
 
-    assetHelper.withCleaner(wsk.action, actionName) { (action, _) =>
-      action.create(actionName, defaultAction)
-    }
-    assetHelper.withCleaner(wsk.trigger, triggerName) { (trigger, _) =>
-      trigger.create(triggerName)
-    }
+          assetHelper.withCleaner(wsk.action, actionName) { (action, _) =>
+            action.create(actionName, defaultAction)
+          }
+          assetHelper.withCleaner(wsk.trigger, triggerName) { (trigger, _) =>
+            trigger.create(triggerName)
+          }
 
-    val deployedControllers = WhiskProperties.getControllerHosts.split(",").length
+          val deployedControllers = WhiskProperties.getControllerHosts.split(",").length
 
-    // One invoke should be allowed, the second one throttled.
-    // Due to the current implementation of the rate throttling,
-    // it is possible that the counter gets deleted, because the minute switches.
-    retry({
-      val results = (1 to deployedControllers + 1).map { _ =>
-        wsk.action.invoke(actionName, expectedExitCode = TestUtils.DONTCARE_EXIT)
-      }
-      results.map(_.exitCode) should contain(TestUtils.THROTTLED)
-      results.map(_.stderr).mkString should {
-        include(prefix(tooManyRequests(0, 0))) and include("allowed: 1")
-      }
-    }, 2, Some(1.second))
+          // One invoke should be allowed, the second one throttled.
+          // Due to the current implementation of the rate throttling,
+          // it is possible that the counter gets deleted, because the minute switches.
+          retry({
+            val results = (1 to deployedControllers + 1).map { _ =>
+              wsk.action.invoke(actionName, expectedExitCode = TestUtils.DONTCARE_EXIT)
+            }
+            results.map(_.exitCode) should contain(TestUtils.THROTTLED)
+            results.map(_.stderr).mkString should {
+              include(prefix(tooManyRequests(0, 0))) and include("allowed: 1")
+            }
+          }, 2, Some(1.second))
 
-    // One fire should be allowed, the second one throttled.
-    // Due to the current implementation of the rate throttling,
-    // it is possible, that the counter gets deleted, because the minute switches.
-    retry({
-      val results = (1 to deployedControllers + 1).map { _ =>
-        wsk.trigger.fire(triggerName, expectedExitCode = TestUtils.DONTCARE_EXIT)
-      }
-      results.map(_.exitCode) should contain(TestUtils.THROTTLED)
-      results.map(_.stderr).mkString should {
-        include(prefix(tooManyRequests(0, 0))) and include("allowed: 1")
-      }
-    }, 2, Some(1.second))
+          // One fire should be allowed, the second one throttled.
+          // Due to the current implementation of the rate throttling,
+          // it is possible, that the counter gets deleted, because the minute switches.
+          retry({
+            val results = (1 to deployedControllers + 1).map { _ =>
+              wsk.trigger.fire(triggerName, expectedExitCode = TestUtils.DONTCARE_EXIT)
+            }
+            results.map(_.exitCode) should contain(TestUtils.THROTTLED)
+            results.map(_.stderr).mkString should {
+              include(prefix(tooManyRequests(0, 0))) and include("allowed: 1")
+            }
+          }, 2, Some(1.second))
+        },
+        10,
+        Some(1.second),
+        Some(
+          s"limits.ThrottleTests.Namespace-specific throttles.should respect overridden rate-throttles of 1 not successful, retrying.."))
   }
 
   // One sequence invocation should count as one invocation for rate throttling purposes.
   // This is independent of the number of actions in the sequences.
   it should "respect overridden rate-throttles of 1 for sequences" in withAssetCleaner(oneSequenceProps) {
-    (wp, assetHelper) =>
-      implicit val props = wp
+    org.apache.openwhisk.utils.retry(
+      { (wp, assetHelper) =>
+        implicit val props = wp
 
-      val actionName = "oneAction"
-      val sequenceName = "oneSequence"
+        val actionName = "oneAction-" + UUID.randomUUID().toString()
+        val sequenceName = "oneSequence-" + UUID.randomUUID().toString()
 
-      assetHelper.withCleaner(wsk.action, actionName) { (action, _) =>
-        action.create(actionName, defaultAction)
-      }
-
-      assetHelper.withCleaner(wsk.action, sequenceName) { (action, _) =>
-        action.create(sequenceName, Some(s"$actionName,$actionName"), kind = Some("sequence"))
-      }
-
-      val deployedControllers = WhiskProperties.getControllerHosts.split(",").length
-
-      // One invoke should be allowed.
-      wsk.action
-        .invoke(sequenceName, expectedExitCode = TestUtils.DONTCARE_EXIT)
-        .exitCode shouldBe TestUtils.SUCCESS_EXIT
-
-      // One invoke should be allowed, the second one throttled.
-      // Due to the current implementation of the rate throttling,
-      // it is possible that the counter gets deleted, because the minute switches.
-      retry({
-        val results = (1 to deployedControllers + 1).map { _ =>
-          wsk.action.invoke(sequenceName, expectedExitCode = TestUtils.DONTCARE_EXIT)
+        assetHelper.withCleaner(wsk.action, actionName) { (action, _) =>
+          action.create(actionName, defaultAction)
         }
-        results.map(_.exitCode) should contain(TestUtils.THROTTLED)
-        results.map(_.stderr).mkString should {
-          include(prefix(tooManyRequests(0, 0))) and include("allowed: 1")
+
+        assetHelper.withCleaner(wsk.action, sequenceName) { (action, _) =>
+          action.create(sequenceName, Some(s"$actionName,$actionName"), kind = Some("sequence"))
         }
-      }, 2, Some(1.second))
+
+        val deployedControllers = WhiskProperties.getControllerHosts.split(",").length
+
+        // One invoke should be allowed.
+        wsk.action
+          .invoke(sequenceName, expectedExitCode = TestUtils.DONTCARE_EXIT)
+          .exitCode shouldBe TestUtils.SUCCESS_EXIT
+
+        // One invoke should be allowed, the second one throttled.
+        // Due to the current implementation of the rate throttling,
+        // it is possible that the counter gets deleted, because the minute switches.
+        retry({
+          val results = (1 to deployedControllers + 1).map { _ =>
+            wsk.action.invoke(sequenceName, expectedExitCode = TestUtils.DONTCARE_EXIT)
+          }
+          results.map(_.exitCode) should contain(TestUtils.THROTTLED)
+          results.map(_.stderr).mkString should {
+            include(prefix(tooManyRequests(0, 0))) and include("allowed: 1")
+          }
+        }, 2, Some(1.second))
+      },
+      10,
+      Some(1.second),
+      Some(
+        s"limits.ThrottleTests.Namespace-specific throttles.should respect overridden rate-throttles of 1 for sequences not successful, retrying.."))
   }
 
   it should "respect overridden concurrent throttle of 0" in withAssetCleaner(zeroConcProps) { (wp, assetHelper) =>
-    implicit val props = wp
-    val actionName = "zeroConcurrentAction"
+    org.apache.openwhisk.utils.retry(
+      {
+        implicit val props = wp
+        val actionName = "zeroConcurrentAction-" + UUID.randomUUID().toString()
 
-    assetHelper.withCleaner(wsk.action, actionName) { (action, _) =>
-      action.create(actionName, defaultAction)
-    }
+        assetHelper.withCleaner(wsk.action, actionName) { (action, _) =>
+          action.create(actionName, defaultAction)
+        }
 
-    wsk.action.invoke(actionName, expectedExitCode = TooManyRequests.intValue).stderr should {
-      include(prefix(tooManyConcurrentRequests(0, 0))) and include("allowed: 0")
-    }
+        wsk.action.invoke(actionName, expectedExitCode = TooManyRequests.intValue).stderr should {
+          include(prefix(tooManyConcurrentRequests(0, 0))) and include("allowed: 0")
+        }
+      },
+      10,
+      Some(1.second),
+      Some(
+        s"limits.ThrottleTests.Namespace-specific throttles.should respect overridden concurrent throttle of 0 for sequences not successful, retrying.."))
   }
 
   it should "not store an activation if disabled for this namespace" in withAssetCleaner(activationDisabled) {
-    (wp, assetHelper) =>
-      implicit val props = wp
-      val actionName = "activationDisabled"
+    org.apache.openwhisk.utils.retry(
+      { (wp, assetHelper) =>
+        implicit val props = wp
+        val actionName = "activationDisabled-" + UUID.randomUUID().toString()
 
-      assetHelper.withCleaner(wsk.action, actionName) { (action, _) =>
-        action.create(actionName, defaultAction)
-      }
+        assetHelper.withCleaner(wsk.action, actionName) { (action, _) =>
+          action.create(actionName, defaultAction)
+        }
 
-      val runResult = wsk.action.invoke(actionName)
-      val activationId = wsk.activation.extractActivationId(runResult)
-      withClue(s"did not find an activation id in '$runResult'") {
-        activationId shouldBe a[Some[_]]
-      }
+        val runResult = wsk.action.invoke(actionName)
+        val activationId = wsk.activation.extractActivationId(runResult)
+        withClue(s"did not find an activation id in '$runResult'") {
+          activationId shouldBe a[Some[_]]
+        }
 
-      val activation = wsk.activation.waitForActivation(activationId.get)
+        val activation = wsk.activation.waitForActivation(activationId.get)
 
-      activation shouldBe 'Left
+        activation shouldBe 'Left
+      },
+      10,
+      Some(1.second),
+      Some(
+        s"limits.ThrottleTests.Namespace-specific throttles.should not store an activation if disabled for this namespace not successful, retrying.."))
   }
 }
