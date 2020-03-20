@@ -216,21 +216,30 @@ class ActionLimitsTests extends TestHelpers with WskTestHelpers with WskActorSys
    */
   it should "error with a proper warning if the action exceeds its time limits" in withAssetCleaner(wskprops) {
     (wp, assetHelper) =>
-      val name = "TestActionCausingTimeout-" + System.currentTimeMillis()
-      assetHelper.withCleaner(wsk.action, name, confirmDelete = true) { (action, _) =>
-        action.create(name, Some(defaultSleepAction), timeout = Some(allowedActionDuration))
-      }
+      org.apache.openwhisk.utils
+        .retry(
+          {
+            val name = "TestActionCausingTimeout-" + System.currentTimeMillis()
+            assetHelper.withCleaner(wsk.action, name, confirmDelete = true) { (action, _) =>
+              action.create(name, Some(defaultSleepAction), timeout = Some(allowedActionDuration))
+            }
 
-      val run = wsk.action.invoke(name, Map("sleepTimeInMs" -> allowedActionDuration.plus(1 second).toMillis.toJson))
-      withActivation(wsk.activation, run) { result =>
-        withClue("Activation result not as expected:") {
-          result.response.status shouldBe ActivationResponse.messageForCode(ActivationResponse.DeveloperError)
-          result.response.result.get.fields("error") shouldBe {
-            Messages.timedoutActivation(allowedActionDuration, init = false).toJson
-          }
-          result.duration.toInt should be >= allowedActionDuration.toMillis.toInt
-        }
-      }
+            val run =
+              wsk.action.invoke(name, Map("sleepTimeInMs" -> allowedActionDuration.plus(1 second).toMillis.toJson))
+            withActivation(wsk.activation, run) { result =>
+              withClue("Activation result not as expected:") {
+                result.response.status shouldBe ActivationResponse.messageForCode(ActivationResponse.DeveloperError)
+                result.response.result.get.fields("error") shouldBe {
+                  Messages.timedoutActivation(allowedActionDuration, init = false).toJson
+                }
+                result.duration.toInt should be >= allowedActionDuration.toMillis.toInt
+              }
+            }
+          },
+          10,
+          Some(1.second),
+          Some(
+            s"org.apache.openwhisk.core.limits.ActionLimitsTests.Action limits.should error with a proper warning if the action exceeds its time limits not successful, retrying.."))
   }
 
   /**
@@ -239,137 +248,186 @@ class ActionLimitsTests extends TestHelpers with WskTestHelpers with WskActorSys
    * limit minus one second.
    */
   it should "succeed on an action staying within its time limits" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
-    val name = "TestActionCausingNoTimeout-" + System.currentTimeMillis()
-    assetHelper.withCleaner(wsk.action, name, confirmDelete = true) { (action, _) =>
-      action.create(name, Some(defaultSleepAction), timeout = Some(allowedActionDuration))
-    }
+    org.apache.openwhisk.utils
+      .retry(
+        {
+          val name = "TestActionCausingNoTimeout-" + System.currentTimeMillis()
+          assetHelper.withCleaner(wsk.action, name, confirmDelete = true) { (action, _) =>
+            action.create(name, Some(defaultSleepAction), timeout = Some(allowedActionDuration))
+          }
 
-    val run = wsk.action.invoke(name, Map("sleepTimeInMs" -> allowedActionDuration.minus(1 second).toMillis.toJson))
-    withActivation(wsk.activation, run) { result =>
-      withClue("Activation result not as expected:") {
-        result.response.status shouldBe ActivationResponse.messageForCode(ActivationResponse.Success)
-        result.response.result.get.toString should include("""Terminated successfully after around""")
-      }
-    }
+          val run =
+            wsk.action.invoke(name, Map("sleepTimeInMs" -> allowedActionDuration.minus(1 second).toMillis.toJson))
+          withActivation(wsk.activation, run) { result =>
+            withClue("Activation result not as expected:") {
+              result.response.status shouldBe ActivationResponse.messageForCode(ActivationResponse.Success)
+              result.response.result.get.toString should include("""Terminated successfully after around""")
+            }
+          }
+        },
+        10,
+        Some(1.second),
+        Some(
+          s"org.apache.openwhisk.core.limits.ActionLimitsTests.Action limits.should succeed on an action staying within its time limits not successful, retrying.."))
   }
 
   it should "succeed but truncate logs, if log size exceeds its limit" in withAssetCleaner(wskprops) {
     (wp, assetHelper) =>
-      val bytesPerLine = 16
-      val allowedSize = 1 megabytes
-      val name = "TestActionCausingExceededLogs"
-      assetHelper.withCleaner(wsk.action, name, confirmDelete = true) {
-        val actionName = TestUtils.getTestActionFilename("dosLogs.js")
-        (action, _) =>
-          action.create(name, Some(actionName), logsize = Some(allowedSize))
-      }
+      org.apache.openwhisk.utils
+        .retry(
+          {
+            val bytesPerLine = 16
+            val allowedSize = 1 megabytes
+            val name = "TestActionCausingExceededLogs-" + System.currentTimeMillis()
+            assetHelper.withCleaner(wsk.action, name, confirmDelete = true) {
+              val actionName = TestUtils.getTestActionFilename("dosLogs.js")
+              (action, _) =>
+                action.create(name, Some(actionName), logsize = Some(allowedSize))
+            }
 
-      // Add 10% to allowed size to exceed limit
-      val attemptedSize = (allowedSize.toBytes * 1.1).toLong.bytes
+            // Add 10% to allowed size to exceed limit
+            val attemptedSize = (allowedSize.toBytes * 1.1).toLong.bytes
 
-      val run = wsk.action.invoke(name, Map("payload" -> attemptedSize.toBytes.toJson))
-      withActivation(wsk.activation, run, totalWait = 120 seconds) { response =>
-        val lines = response.logs.get
-        lines.last should include(Messages.truncateLogs(allowedSize))
-      }
+            val run = wsk.action.invoke(name, Map("payload" -> attemptedSize.toBytes.toJson))
+            withActivation(wsk.activation, run, totalWait = 120 seconds) { response =>
+              val lines = response.logs.get
+              lines.last should include(Messages.truncateLogs(allowedSize))
+            }
+          },
+          10,
+          Some(1.second),
+          Some(
+            s"org.apache.openwhisk.core.limits.ActionLimitsTests.Action limits.should succeed but truncate logs, if log size exceeds its limit not successful, retrying.."))
   }
 
   it should s"successfully invoke an action with a payload close to the limit (${ActivationEntityLimit.MAX_ACTIVATION_ENTITY_LIMIT.toMB} MB)" in withAssetCleaner(
     wskprops) { (wp, assetHelper) =>
-    val name = "TestActionCausingJustInBoundaryResult"
-    assetHelper.withCleaner(wsk.action, name) {
-      val actionName = TestUtils.getTestActionFilename("echo.js")
-      (action, _) =>
-        action.create(name, Some(actionName), timeout = Some(15.seconds))
-    }
+    org.apache.openwhisk.utils
+      .retry(
+        {
+          val name = "TestActionCausingJustInBoundaryResult-" + System.currentTimeMillis()
+          assetHelper.withCleaner(wsk.action, name) {
+            val actionName = TestUtils.getTestActionFilename("echo.js")
+            (action, _) =>
+              action.create(name, Some(actionName), timeout = Some(15.seconds))
+          }
 
-    val allowedSize = ActivationEntityLimit.MAX_ACTIVATION_ENTITY_LIMIT.toBytes
+          val allowedSize = ActivationEntityLimit.MAX_ACTIVATION_ENTITY_LIMIT.toBytes
 
-    // Needs some bytes grace since activation message is not only the payload.
-    val args = Map("p" -> ("a" * (allowedSize - 750).toInt).toJson)
-    val start = Instant.now
-    val rr = wsk.action.invoke(name, args, blocking = true, expectedExitCode = TestUtils.SUCCESS_EXIT)
-    Instant.now.toEpochMilli - start.toEpochMilli should be < 15000L // Ensure activation was not retrieved via DB polling
-    val activation = wsk.parseJsonString(rr.respData).convertTo[ActivationResult]
+          // Needs some bytes grace since activation message is not only the payload.
+          val args = Map("p" -> ("a" * (allowedSize - 750).toInt).toJson)
+          val start = Instant.now
+          val rr = wsk.action.invoke(name, args, blocking = true, expectedExitCode = TestUtils.SUCCESS_EXIT)
+          Instant.now.toEpochMilli - start.toEpochMilli should be < 15000L // Ensure activation was not retrieved via DB polling
+          val activation = wsk.parseJsonString(rr.respData).convertTo[ActivationResult]
 
-    activation.response.success shouldBe true
+          activation.response.success shouldBe true
 
-    // The payload is echoed and thus the backchannel supports the limit as well.
-    activation.response.result shouldBe Some(args.toJson)
+          // The payload is echoed and thus the backchannel supports the limit as well.
+          activation.response.result shouldBe Some(args.toJson)
+        },
+        10,
+        Some(1.second),
+        Some(
+          s"org.apache.openwhisk.core.limits.ActionLimitsTests.Action limits.should successfully invoke an action with a payload close to the limit (${ActivationEntityLimit.MAX_ACTIVATION_ENTITY_LIMIT.toMB} MB) not successful, retrying.."))
   }
 
   Seq(true, false).foreach { blocking =>
     it should s"succeed but truncate result, if result exceeds its limit (blocking: $blocking)" in withAssetCleaner(
       wskprops) { (wp, assetHelper) =>
-      val name = "TestActionCausingExcessiveResult"
-      assetHelper.withCleaner(wsk.action, name) {
-        val actionName = TestUtils.getTestActionFilename("sizedResult.js")
-        (action, _) =>
-          action.create(name, Some(actionName), timeout = Some(15.seconds))
-      }
+      org.apache.openwhisk.utils
+        .retry(
+          {
+            val name = "TestActionCausingExcessiveResult-" + System.currentTimeMillis()
+            assetHelper.withCleaner(wsk.action, name) {
+              val actionName = TestUtils.getTestActionFilename("sizedResult.js")
+              (action, _) =>
+                action.create(name, Some(actionName), timeout = Some(15.seconds))
+            }
 
-      val allowedSize = ActivationEntityLimit.MAX_ACTIVATION_ENTITY_LIMIT.toBytes
+            val allowedSize = ActivationEntityLimit.MAX_ACTIVATION_ENTITY_LIMIT.toBytes
 
-      def checkResponse(activation: ActivationResult) = {
-        val response = activation.response
-        response.success shouldBe false
-        response.status shouldBe ActivationResponse.messageForCode(ActivationResponse.ApplicationError)
-        val msg = response.result.get.fields(ActivationResponse.ERROR_FIELD).convertTo[String]
-        val expected = Messages.truncatedResponse((allowedSize + 10).B, allowedSize.B)
-        withClue(s"is: ${msg.take(expected.length)}\nexpected: $expected") {
-          msg.startsWith(expected) shouldBe true
-        }
-        msg.endsWith("a") shouldBe true
-      }
+            def checkResponse(activation: ActivationResult) = {
+              val response = activation.response
+              response.success shouldBe false
+              response.status shouldBe ActivationResponse.messageForCode(ActivationResponse.ApplicationError)
+              val msg = response.result.get.fields(ActivationResponse.ERROR_FIELD).convertTo[String]
+              val expected = Messages.truncatedResponse((allowedSize + 10).B, allowedSize.B)
+              withClue(s"is: ${msg.take(expected.length)}\nexpected: $expected") {
+                msg.startsWith(expected) shouldBe true
+              }
+              msg.endsWith("a") shouldBe true
+            }
 
-      // this tests an active ack failure to post from invoker
-      val args = Map("size" -> (allowedSize + 1).toJson, "char" -> "a".toJson)
-      val code = if (blocking) BadGateway.intValue else TestUtils.ACCEPTED
-      if (blocking) {
-        val start = Instant.now
-        val rr = wsk.action.invoke(name, args, blocking = blocking, expectedExitCode = code)
-        Instant.now.toEpochMilli - start.toEpochMilli should be < 15000L // Ensure activation was not retrieved via DB polling
-        checkResponse(wsk.parseJsonString(rr.respData).convertTo[ActivationResult])
-      } else {
-        val rr = wsk.action.invoke(name, args, blocking = blocking, expectedExitCode = code)
-        withActivation(wsk.activation, rr, totalWait = 120 seconds) { checkResponse(_) }
-      }
+            // this tests an active ack failure to post from invoker
+            val args = Map("size" -> (allowedSize + 1).toJson, "char" -> "a".toJson)
+            val code = if (blocking) BadGateway.intValue else TestUtils.ACCEPTED
+            if (blocking) {
+              val start = Instant.now
+              val rr = wsk.action.invoke(name, args, blocking = blocking, expectedExitCode = code)
+              Instant.now.toEpochMilli - start.toEpochMilli should be < 15000L // Ensure activation was not retrieved via DB polling
+              checkResponse(wsk.parseJsonString(rr.respData).convertTo[ActivationResult])
+            } else {
+              val rr = wsk.action.invoke(name, args, blocking = blocking, expectedExitCode = code)
+              withActivation(wsk.activation, rr, totalWait = 120 seconds) { checkResponse(_) }
+            }
+          },
+          10,
+          Some(1.second),
+          Some(
+            s"org.apache.openwhisk.core.limits.ActionLimitsTests.Action limits.should succeed but truncate result, if result exceeds its limit (blocking: $blocking) not successful, retrying.."))
     }
   }
 
   it should "succeed with one log line" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
-    val name = "TestActionWithLogs"
-    assetHelper.withCleaner(wsk.action, name, confirmDelete = true) {
-      val actionName = TestUtils.getTestActionFilename("dosLogs.js")
-      (action, _) =>
-        action.create(name, Some(actionName))
-    }
+    org.apache.openwhisk.utils
+      .retry(
+        {
+          val name = "TestActionWithLogs-" + System.currentTimeMillis()
+          assetHelper.withCleaner(wsk.action, name, confirmDelete = true) {
+            val actionName = TestUtils.getTestActionFilename("dosLogs.js")
+            (action, _) =>
+              action.create(name, Some(actionName))
+          }
 
-    val run = wsk.action.invoke(name)
-    withActivation(wsk.activation, run) { response =>
-      val logs = response.logs.get
-      withClue(logs) { logs.size shouldBe 1 }
-      logs.head should include("123456789abcdef")
+          val run = wsk.action.invoke(name)
+          withActivation(wsk.activation, run) { response =>
+            val logs = response.logs.get
+            withClue(logs) { logs.size shouldBe 1 }
+            logs.head should include("123456789abcdef")
 
-      response.response.status shouldBe "success"
-      response.response.result shouldBe Some(JsObject("msg" -> 1.toJson))
-    }
+            response.response.status shouldBe "success"
+            response.response.result shouldBe Some(JsObject("msg" -> 1.toJson))
+          }
+        },
+        10,
+        Some(1.second),
+        Some(
+          s"org.apache.openwhisk.core.limits.ActionLimitsTests.Action limits.should succeed with one log line not successful, retrying.."))
   }
 
   it should "fail on creating an action with exec which is too big" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
-    val name = "TestActionCausingExecTooBig"
+    org.apache.openwhisk.utils
+      .retry(
+        {
+          val name = "TestActionCausingExecTooBig-" + System.currentTimeMillis()
 
-    val actionCode = new File(s"$testActionsDir${File.separator}$name.js")
-    actionCode.createNewFile()
-    val pw = new PrintWriter(actionCode)
-    pw.write("a" * (actionCodeLimit.toBytes + 1).toInt)
-    pw.close
+          val actionCode = new File(s"$testActionsDir${File.separator}$name.js")
+          actionCode.createNewFile()
+          val pw = new PrintWriter(actionCode)
+          pw.write("a" * (actionCodeLimit.toBytes + 1).toInt)
+          pw.close
 
-    assetHelper.withCleaner(wsk.action, name, confirmDelete = false) { (action, _) =>
-      action.create(name, Some(actionCode.getAbsolutePath), expectedExitCode = PayloadTooLarge.intValue)
-    }
+          assetHelper.withCleaner(wsk.action, name, confirmDelete = false) { (action, _) =>
+            action.create(name, Some(actionCode.getAbsolutePath), expectedExitCode = PayloadTooLarge.intValue)
+          }
 
-    actionCode.delete
+          actionCode.delete
+        },
+        10,
+        Some(1.second),
+        Some(
+          s"org.apache.openwhisk.core.limits.ActionLimitsTests.Action limits.should fail on creating an action with exec which is too big not successful, retrying.."))
   }
 
   /**
@@ -377,90 +435,124 @@ class ActionLimitsTests extends TestHelpers with WskTestHelpers with WskActorSys
    */
   it should "successfully invoke an action when it is within nofile limit" in withAssetCleaner(wskprops) {
     (wp, assetHelper) =>
-      val name = "TestFileLimitGood-" + System.currentTimeMillis()
-      assetHelper.withCleaner(wsk.action, name) { (action, _) =>
-        action.create(name, Some(openFileAction))
-      }
+      org.apache.openwhisk.utils
+        .retry(
+          {
+            val name = "TestFileLimitGood-" + System.currentTimeMillis()
+            assetHelper.withCleaner(wsk.action, name) { (action, _) =>
+              action.create(name, Some(openFileAction))
+            }
 
-      val run = wsk.action.invoke(name, Map("numFiles" -> minExpectedOpenFiles.toJson))
-      withActivation(wsk.activation, run) { activation =>
-        activation.response.success shouldBe true
-        activation.response.result.get shouldBe {
-          JsObject("filesToOpen" -> minExpectedOpenFiles.toJson, "filesOpen" -> minExpectedOpenFiles.toJson)
-        }
-      }
+            val run = wsk.action.invoke(name, Map("numFiles" -> minExpectedOpenFiles.toJson))
+            withActivation(wsk.activation, run) { activation =>
+              activation.response.success shouldBe true
+              activation.response.result.get shouldBe {
+                JsObject("filesToOpen" -> minExpectedOpenFiles.toJson, "filesOpen" -> minExpectedOpenFiles.toJson)
+              }
+            }
+          },
+          10,
+          Some(1.second),
+          Some(
+            s"org.apache.openwhisk.core.limits.ActionLimitsTests.Action limits.should successfully invoke an action when it is within nofile limit not successful, retrying.."))
   }
 
   /**
    * Test an action that should fail to open way too many files.
    */
   it should "fail to invoke an action when it exceeds nofile limit" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
-    val name = "TestFileLimitBad-" + System.currentTimeMillis()
-    assetHelper.withCleaner(wsk.action, name) { (action, _) =>
-      action.create(name, Some(openFileAction))
-    }
+    org.apache.openwhisk.utils
+      .retry(
+        {
+          val name = "TestFileLimitBad-" + System.currentTimeMillis()
+          assetHelper.withCleaner(wsk.action, name) { (action, _) =>
+            action.create(name, Some(openFileAction))
+          }
 
-    val run = wsk.action.invoke(name, Map("numFiles" -> (openFileLimit + 1).toJson))
-    withActivation(wsk.activation, run) { activation =>
-      activation.response.success shouldBe false
+          val run = wsk.action.invoke(name, Map("numFiles" -> (openFileLimit + 1).toJson))
+          withActivation(wsk.activation, run) {
+            activation =>
+              activation.response.success shouldBe false
 
-      val error = activation.response.result.get.fields("error").asJsObject
-      error.fields("filesToOpen") shouldBe (openFileLimit + 1).toJson
+              val error = activation.response.result.get.fields("error").asJsObject
+              error.fields("filesToOpen") shouldBe (openFileLimit + 1).toJson
 
-      error.fields("message") shouldBe {
-        JsObject(
-          "code" -> "EMFILE".toJson,
-          "errno" -> (-24).toJson,
-          "path" -> "/dev/zero".toJson,
-          "syscall" -> "open".toJson)
-      }
+              error.fields("message") shouldBe {
+                JsObject(
+                  "code" -> "EMFILE".toJson,
+                  "errno" -> (-24).toJson,
+                  "path" -> "/dev/zero".toJson,
+                  "syscall" -> "open".toJson)
+              }
 
-      val JsNumber(n) = error.fields("filesOpen")
-      n.toInt should be >= minExpectedOpenFiles
+              val JsNumber(n) = error.fields("filesOpen")
+              n.toInt should be >= minExpectedOpenFiles
 
-      activation.logs
-        .getOrElse(List.empty)
-        .count(_.contains("ERROR: opened files = ")) shouldBe 1
-    }
+              activation.logs
+                .getOrElse(List.empty)
+                .count(_.contains("ERROR: opened files = ")) shouldBe 1
+          }
+        },
+        10,
+        Some(1.second),
+        Some(
+          s"org.apache.openwhisk.core.limits.ActionLimitsTests.Action limits.should fail to invoke an action when it exceeds nofile limit not successful, retrying.."))
   }
 
   it should "be able to run memory intensive actions multiple times by running the GC in the action" in withAssetCleaner(
     wskprops) { (wp, assetHelper) =>
-    val name = "TestNodeJsMemoryActionAbleToRunOften"
-    assetHelper.withCleaner(wsk.action, name, confirmDelete = true) {
-      val allowedMemory = 512 megabytes
-      val actionName = TestUtils.getTestActionFilename("memoryWithGC.js")
-      (action, _) =>
-        action.create(name, Some(actionName), memory = Some(allowedMemory))
-    }
+    org.apache.openwhisk.utils
+      .retry(
+        {
+          val name = "TestNodeJsMemoryActionAbleToRunOften-" + System.currentTimeMillis()
+          assetHelper.withCleaner(wsk.action, name, confirmDelete = true) {
+            val allowedMemory = 512 megabytes
+            val actionName = TestUtils.getTestActionFilename("memoryWithGC.js")
+            (action, _) =>
+              action.create(name, Some(actionName), memory = Some(allowedMemory))
+          }
 
-    for (a <- 1 to 10) {
-      val run = wsk.action.invoke(name, Map("payload" -> "128".toJson))
-      withActivation(wsk.activation, run) { response =>
-        response.response.status shouldBe "success"
-        response.response.result shouldBe Some(JsObject("msg" -> "OK, buffer of size 128 MB has been filled.".toJson))
-      }
-    }
+          for (a <- 1 to 10) {
+            val run = wsk.action.invoke(name, Map("payload" -> "128".toJson))
+            withActivation(wsk.activation, run) { response =>
+              response.response.status shouldBe "success"
+              response.response.result shouldBe Some(
+                JsObject("msg" -> "OK, buffer of size 128 MB has been filled.".toJson))
+            }
+          }
+        },
+        10,
+        Some(1.second),
+        Some(
+          s"org.apache.openwhisk.core.limits.ActionLimitsTests.Action limits.should be able to run memory intensive actions multiple times by running the GC in the action not successful, retrying.."))
   }
 
   it should "be able to run a memory intensive actions" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
-    val name = "TestNodeJsInvokeHighMemory"
-    val allowedMemory = MemoryLimit.MAX_MEMORY
-    assetHelper.withCleaner(wsk.action, name, confirmDelete = true) {
-      val actionName = TestUtils.getTestActionFilename("memoryWithGC.js")
-      (action, _) =>
-        action.create(name, Some(actionName), memory = Some(allowedMemory))
-    }
-    // Don't try to allocate all the memory on invoking the action, as the maximum memory is set for the whole container
-    // and not only for the user action.
-    val run = wsk.action.invoke(name, Map("payload" -> (allowedMemory.toMB - 56).toJson))
-    withActivation(wsk.activation, run) { response =>
-      response.response.status shouldBe "success"
-    }
+    org.apache.openwhisk.utils
+      .retry(
+        {
+          val name = "TestNodeJsInvokeHighMemory-" + System.currentTimeMillis()
+          val allowedMemory = MemoryLimit.MAX_MEMORY
+          assetHelper.withCleaner(wsk.action, name, confirmDelete = true) {
+            val actionName = TestUtils.getTestActionFilename("memoryWithGC.js")
+            (action, _) =>
+              action.create(name, Some(actionName), memory = Some(allowedMemory))
+          }
+          // Don't try to allocate all the memory on invoking the action, as the maximum memory is set for the whole container
+          // and not only for the user action.
+          val run = wsk.action.invoke(name, Map("payload" -> (allowedMemory.toMB - 56).toJson))
+          withActivation(wsk.activation, run) { response =>
+            response.response.status shouldBe "success"
+          }
+        },
+        10,
+        Some(1.second),
+        Some(
+          s"org.apache.openwhisk.core.limits.ActionLimitsTests.Action limits.should be able to run a memory intensive actions not successful, retrying.."))
   }
 
   it should "be aborted when exceeding its memory limits" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
-    val name = "TestNodeJsMemoryExceeding"
+    val name = "TestNodeJsMemoryExceeding-" + System.currentTimeMillis()
     assetHelper.withCleaner(wsk.action, name, confirmDelete = true) {
       val allowedMemory = MemoryLimit.MIN_MEMORY
       val actionName = TestUtils.getTestActionFilename("memoryWithGC.js")
@@ -473,6 +565,7 @@ class ActionLimitsTests extends TestHelpers with WskTestHelpers with WskActorSys
     withActivation(wsk.activation, run) {
       _.response.result.get.fields("error") shouldBe Messages.memoryExhausted.toJson
     }
+
   }
 
   /**
@@ -480,30 +573,39 @@ class ActionLimitsTests extends TestHelpers with WskTestHelpers with WskActorSys
    */
   it should "interrupt the heavy logging action within its time limits" in withAssetCleaner(wskprops) {
     (wp, assetHelper) =>
-      val name = s"NodeJsTestLoggingActionCausingTimeout-${System.currentTimeMillis()}"
-      assetHelper.withCleaner(wsk.action, name, confirmDelete = true) { (action, _) =>
-        action.create(
-          name,
-          Some(TestUtils.getTestActionFilename("loggingTimeout.js")),
-          timeout = Some(allowedActionDuration))
-      }
-      val duration = allowedActionDuration + 3.minutes
-      val checkDuration = allowedActionDuration + 1.minutes
-      val run =
-        wsk.action.invoke(name, Map("durationMillis" -> duration.toMillis.toJson, "delayMillis" -> 100.toJson))
-      withActivation(wsk.activation, run) { result =>
-        withClue("Activation result not as expected:") {
-          result.response.status shouldBe ActivationResponse.messageForCode(ActivationResponse.DeveloperError)
-          result.response.result.get
-            .fields("error") shouldBe Messages.timedoutActivation(allowedActionDuration, init = false).toJson
-          val logs = result.logs.get
-          logs.last should include(Messages.logWarningDeveloperError)
+      org.apache.openwhisk.utils
+        .retry(
+          {
+            val name = s"NodeJsTestLoggingActionCausingTimeout-${System.currentTimeMillis()}"
+            assetHelper.withCleaner(wsk.action, name, confirmDelete = true) { (action, _) =>
+              action.create(
+                name,
+                Some(TestUtils.getTestActionFilename("loggingTimeout.js")),
+                timeout = Some(allowedActionDuration))
+            }
+            val duration = allowedActionDuration + 3.minutes
+            val checkDuration = allowedActionDuration + 1.minutes
+            val run =
+              wsk.action.invoke(name, Map("durationMillis" -> duration.toMillis.toJson, "delayMillis" -> 100.toJson))
+            withActivation(wsk.activation, run) {
+              result =>
+                withClue("Activation result not as expected:") {
+                  result.response.status shouldBe ActivationResponse.messageForCode(ActivationResponse.DeveloperError)
+                  result.response.result.get
+                    .fields("error") shouldBe Messages.timedoutActivation(allowedActionDuration, init = false).toJson
+                  val logs = result.logs.get
+                  logs.last should include(Messages.logWarningDeveloperError)
 
-          val parseLogTime = (line: String) => Instant.parse(line.split(' ').head)
-          val startTime = parseLogTime(logs.head)
-          val endTime = parseLogTime(logs.last)
-          between(startTime, endTime).toMillis should be < checkDuration.toMillis
-        }
-      }
+                  val parseLogTime = (line: String) => Instant.parse(line.split(' ').head)
+                  val startTime = parseLogTime(logs.head)
+                  val endTime = parseLogTime(logs.last)
+                  between(startTime, endTime).toMillis should be < checkDuration.toMillis
+                }
+            }
+          },
+          10,
+          Some(1.second),
+          Some(
+            s"org.apache.openwhisk.core.limits.ActionLimitsTests.Action limits.should interrupt the heavy logging action within its time limits not successful, retrying.."))
   }
 }
