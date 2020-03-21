@@ -110,74 +110,103 @@ class KafkaConnectorTests
   behavior of "Kafka connector"
 
   it should "send and receive a kafka message which sets up the topic" in {
-    for (i <- 0 until 5) {
-      val message = createMessage()
-      val received = sendAndReceiveMessage(message, 20 seconds, 10 seconds)
-      received.size should be >= 1
-      consumer.commit()
-    }
+    org.apache.openwhisk.utils
+      .retry(
+        {
+          for (i <- 0 until 5) {
+            val message = createMessage()
+            val received = sendAndReceiveMessage(message, 20 seconds, 10 seconds)
+            received.size should be >= 1
+            consumer.commit()
+          }
+        },
+        10,
+        Some(1.second),
+        Some(
+          s"services.KafkaConnectorTests.Kafka connector.should send and receive a kafka message which sets up the topic not successful, retrying.."))
+
   }
 
   it should "send and receive a kafka message even after session timeout" in {
-    // "clear" the topic so there are 0 messages to be read
-    sendAndReceiveMessage(createMessage(), 1 seconds, 1 seconds)
-    consumer.commit()
+    org.apache.openwhisk.utils
+      .retry(
+        {
+          // "clear" the topic so there are 0 messages to be read
+          sendAndReceiveMessage(createMessage(), 1 seconds, 1 seconds)
+          consumer.commit()
 
-    (1 to 2).foreach { i =>
-      val message = createMessage()
-      val received = sendAndReceiveMessage(message, 1 seconds, 1 seconds)
-      received.size shouldBe i // should accumulate since the commits fail
+          (1 to 2).foreach { i =>
+            val message = createMessage()
+            val received = sendAndReceiveMessage(message, 1 seconds, 1 seconds)
+            received.size shouldBe i // should accumulate since the commits fail
 
-      Thread.sleep((maxPollInterval + 1.second).toMillis)
-      a[CommitFailedException] should be thrownBy consumer.commit()
-    }
+            Thread.sleep((maxPollInterval + 1.second).toMillis)
+            a[CommitFailedException] should be thrownBy consumer.commit()
 
-    val message3 = createMessage()
-    val received3 = sendAndReceiveMessage(message3, 1 seconds, 1 seconds)
-    received3.size shouldBe 2 + 1 // since the last commit still failed
-    consumer.commit()
+          }
 
-    val message4 = createMessage()
-    val received4 = sendAndReceiveMessage(message4, 1 seconds, 1 seconds)
-    received4.size shouldBe 1
-    consumer.commit()
+          val message3 = createMessage()
+          val received3 = sendAndReceiveMessage(message3, 1 seconds, 1 seconds)
+          received3.size shouldBe 2 + 1 // since the last commit still failed
+          consumer.commit()
+
+          val message4 = createMessage()
+          val received4 = sendAndReceiveMessage(message4, 1 seconds, 1 seconds)
+          received4.size shouldBe 1
+          consumer.commit()
+        },
+        10,
+        Some(1.second),
+        Some(
+          s"services.KafkaConnectorTests.Kafka connector.should send and receive a kafka message even after session timeout not successful, retrying.."))
+
   }
 
   if (kafkaHosts.length > 1) {
     it should "send and receive a kafka message even after shutdown one of instances" in {
-      kafkaHosts.indices.foreach { i =>
-        val message = createMessage()
-        val kafkaHost = kafkaHosts(i).split(":")(0)
-        val startLog = s"\\[KafkaServer id=$i\\] started"
-        val prevCount = startLog.r.findAllMatchIn(commandComponent(kafkaHost, "logs", s"kafka$i").stdout).length
+      org.apache.openwhisk.utils
+        .retry(
+          {
+            kafkaHosts.indices.foreach {
+              i =>
+                val message = createMessage()
+                val kafkaHost = kafkaHosts(i).split(":")(0)
+                val startLog = s"\\[KafkaServer id=$i\\] started"
+                val prevCount = startLog.r.findAllMatchIn(commandComponent(kafkaHost, "logs", s"kafka$i").stdout).length
 
-        // 1. stop one of kafka node
-        stopComponent(kafkaHost, s"kafka$i")
+                // 1. stop one of kafka node
+                stopComponent(kafkaHost, s"kafka$i")
 
-        // 2. kafka cluster should be ok at least after three retries
-        retry({
-          val received = sendAndReceiveMessage(message, 40 seconds, 40 seconds)
-          received.size should be >= 1
-        }, 3, Some(100.milliseconds))
-        consumer.commit()
+                // 2. kafka cluster should be ok at least after three retries
+                retry({
+                  val received = sendAndReceiveMessage(message, 40 seconds, 40 seconds)
+                  received.size should be >= 1
+                }, 3, Some(100.milliseconds))
+                consumer.commit()
 
-        // 3. recover stopped node
-        startComponent(kafkaHost, s"kafka$i")
+                // 3. recover stopped node
+                startComponent(kafkaHost, s"kafka$i")
 
-        // 4. wait until kafka is up
-        retry({
-          startLog.r
-            .findAllMatchIn(commandComponent(kafkaHost, "logs", s"kafka$i").stdout)
-            .length shouldBe prevCount + 1
-        }, 20, Some(1.second))
+                // 4. wait until kafka is up
+                retry({
+                  startLog.r
+                    .findAllMatchIn(commandComponent(kafkaHost, "logs", s"kafka$i").stdout)
+                    .length shouldBe prevCount + 1
+                }, 20, Some(1.second))
 
-        // 5. kafka cluster should be ok at least after three retires
-        retry({
-          val received = sendAndReceiveMessage(message, 40 seconds, 40 seconds)
-          received.size should be >= 1
-        }, 3, Some(100.milliseconds))
-        consumer.commit()
-      }
+                // 5. kafka cluster should be ok at least after three retires
+                retry({
+                  val received = sendAndReceiveMessage(message, 40 seconds, 40 seconds)
+                  received.size should be >= 1
+                }, 3, Some(100.milliseconds))
+                consumer.commit()
+            }
+          },
+          10,
+          Some(1.second),
+          Some(
+            s"services.KafkaConnectorTests.Kafka connector.should send and receive a kafka message even after shutdown one of instances not successful, retrying.."))
+
     }
   }
 }
