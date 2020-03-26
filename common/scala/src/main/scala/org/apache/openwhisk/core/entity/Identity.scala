@@ -141,11 +141,12 @@ object Identity extends MultipleReadersSingleWriterCache[Option[Identity], DocIn
         val JsString(uuid) = value("uuid")
         val JsString(secret) = value("key")
         val JsString(namespace) = value("namespace")
-        val JsString(account) = value("account")
+        val account = JsObject(value).fields.get("account").map(_.toString()).getOrElse("")
         Identity(
           subject,
           Namespace(EntityName(namespace), UUID(uuid)),
-          BasicAuthenticationAuthKey(UUID(uuid), Secret(secret), Some(account)),
+          if (account.isEmpty) BasicAuthenticationAuthKey(UUID(uuid), Secret(secret))
+          else BasicAuthenticationAuthKey(UUID(uuid), Secret(secret), Some(account)),
           Privilege.ALL,
           limits)
       case _ =>
