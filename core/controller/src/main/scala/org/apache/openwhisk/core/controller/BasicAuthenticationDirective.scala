@@ -38,7 +38,7 @@ object BasicAuthenticationDirective extends AuthenticationDirectiveProvider {
     credentials flatMap { pw =>
       Try {
         // authkey deserialization is wrapped in a try to guard against malformed values
-        val authkey = BasicAuthenticationAuthKey(UUID(pw.username), Secret(pw.password))
+        val authkey = BasicAuthenticationAuthKey(UUID(pw.username), Secret(pw.password), None)
         logging.info(this, s"authenticate: ${authkey.uuid}")
         val future = Identity.get(authStore, authkey) map { result =>
           if (authkey == result.authkey) {

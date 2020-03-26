@@ -20,7 +20,7 @@ package org.apache.openwhisk.core.invoker
 import org.apache.kafka.common.errors.RecordTooLargeException
 import org.apache.openwhisk.common.{Logging, TransactionId, UserEvents}
 import org.apache.openwhisk.core.connector.{AcknowledegmentMessage, EventMessage, MessageProducer}
-import org.apache.openwhisk.core.entity.{ControllerInstanceId, InvokerInstanceId, UUID, WhiskActivation}
+import org.apache.openwhisk.core.entity.{ControllerInstanceId, Identity, InvokerInstanceId, WhiskActivation}
 import org.apache.openwhisk.core.invoker.InvokerReactive.ActiveAck
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -43,7 +43,7 @@ class MessagingActiveAck(producer: MessageProducer, instance: InvokerInstanceId,
                      activationResult: WhiskActivation,
                      blockingInvoke: Boolean,
                      controllerInstance: ControllerInstanceId,
-                     userId: UUID,
+                     user: Identity,
                      acknowledegment: AcknowledegmentMessage): Future[Any] = {
     implicit val transid: TransactionId = tid
 
@@ -58,7 +58,7 @@ class MessagingActiveAck(producer: MessageProducer, instance: InvokerInstanceId,
     // UserMetrics are sent, when the slot is free again. This ensures, that all metrics are sent.
     if (acknowledegment.isSlotFree.nonEmpty) {
       eventSender.foreach { s =>
-        EventMessage.from(activationResult, source, userId) match {
+        EventMessage.from(activationResult, source, user.namespace.uuid, user) match {
           case Success(msg) => s.send(msg)
           case Failure(t)   => logging.error(this, s"activation event was not sent: $t")
         }

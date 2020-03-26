@@ -309,7 +309,7 @@ class ContainerProxy(factory: (TransactionId,
               activation,
               job.msg.blocking,
               job.msg.rootControllerIndex,
-              job.msg.user.namespace.uuid,
+              job.msg.user,
               CombinedCompletionAndResultMessage(transid, activation, instance))
             storeActivation(transid, activation, context)
         }
@@ -687,7 +687,7 @@ class ContainerProxy(factory: (TransactionId,
         val msg =
           if (splitAckMessagesPendingLogCollection) ResultMessage(tid, result)
           else CombinedCompletionAndResultMessage(tid, result, instance)
-        sendActiveAck(tid, result, job.msg.blocking, job.msg.rootControllerIndex, job.msg.user.namespace.uuid, msg)
+        sendActiveAck(tid, result, job.msg.blocking, job.msg.rootControllerIndex, job.msg.user, msg)
       }
     } else {
       // For non-blocking request, do not forward the result.
@@ -695,7 +695,7 @@ class ContainerProxy(factory: (TransactionId,
       else
         activation.map { result =>
           val msg = CompletionMessage(tid, result, instance)
-          sendActiveAck(tid, result, job.msg.blocking, job.msg.rootControllerIndex, job.msg.user.namespace.uuid, msg)
+          sendActiveAck(tid, result, job.msg.blocking, job.msg.rootControllerIndex, job.msg.user, msg)
         }
     }
 
@@ -737,7 +737,7 @@ class ContainerProxy(factory: (TransactionId,
                 activation,
                 job.msg.blocking,
                 job.msg.rootControllerIndex,
-                job.msg.user.namespace.uuid,
+                job.msg.user,
                 CompletionMessage(tid, activation, instance)))
         }
         // Storing the record. Entirely asynchronous and not waited upon.

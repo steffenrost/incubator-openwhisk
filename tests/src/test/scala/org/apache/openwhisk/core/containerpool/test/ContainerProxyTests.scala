@@ -189,7 +189,7 @@ class ContainerProxyTests
        activation: WhiskActivation,
        _: Boolean,
        _: ControllerInstanceId,
-       _: UUID,
+       _: Identity,
        _: AcknowledegmentMessage) =>
         Future.successful(())
     }
@@ -200,10 +200,10 @@ class ContainerProxyTests
                        activation: WhiskActivation,
                        blockingInvoke: Boolean,
                        controllerInstance: ControllerInstanceId,
-                       userId: UUID,
+                       user: Identity,
                        acknowledegment: AcknowledegmentMessage): Future[Any] = {
       verifyAnnotations(activation, a)
-      acker(tid, activation, blockingInvoke, controllerInstance, userId, acknowledegment)
+      acker(tid, activation, blockingInvoke, controllerInstance, user, acknowledegment)
     }
   }
 
@@ -214,7 +214,7 @@ class ContainerProxyTests
        activation: WhiskActivation,
        _: Boolean,
        _: ControllerInstanceId,
-       _: UUID,
+       _: Identity,
        _: AcknowledegmentMessage) =>
         Future.successful(())
     }
@@ -225,10 +225,10 @@ class ContainerProxyTests
                        activation: WhiskActivation,
                        blockingInvoke: Boolean,
                        controllerInstance: ControllerInstanceId,
-                       userId: UUID,
+                       user: Identity,
                        acknowledegment: AcknowledegmentMessage): Future[Any] = {
       verifyAnnotations(activation, a)
-      acker(tid, activation, blockingInvoke, controllerInstance, userId, acknowledegment)
+      acker(tid, activation, blockingInvoke, controllerInstance, user, acknowledegment)
     }
   }
 

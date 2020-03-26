@@ -141,10 +141,11 @@ object Identity extends MultipleReadersSingleWriterCache[Option[Identity], DocIn
         val JsString(uuid) = value("uuid")
         val JsString(secret) = value("key")
         val JsString(namespace) = value("namespace")
+        val JsString(account) = value("account")
         Identity(
           subject,
           Namespace(EntityName(namespace), UUID(uuid)),
-          BasicAuthenticationAuthKey(UUID(uuid), Secret(secret)),
+          BasicAuthenticationAuthKey(UUID(uuid), Secret(secret), Some(account)),
           Privilege.ALL,
           limits)
       case _ =>

@@ -65,7 +65,7 @@ object InvokerReactive extends InvokerProvider {
               activationResult: WhiskActivation,
               blockingInvoke: Boolean,
               controllerInstance: ControllerInstanceId,
-              userId: UUID,
+              user: Identity,
               acknowledegment: AcknowledegmentMessage): Future[Any]
   }
 
@@ -271,7 +271,7 @@ class InvokerReactive(
                   activation,
                   msg.blocking,
                   msg.rootControllerIndex,
-                  msg.user.namespace.uuid,
+                  msg.user,
                   CombinedCompletionAndResultMessage(transid, activation, instance))
 
                 store(msg.transid, activation, UserContext(msg.user))
@@ -289,7 +289,7 @@ class InvokerReactive(
             activation,
             false,
             msg.rootControllerIndex,
-            msg.user.namespace.uuid,
+            msg.user,
             CombinedCompletionAndResultMessage(transid, activation, instance))
 
           logging.warn(this, s"namespace ${msg.user.namespace.name} was blocked in invoker.")

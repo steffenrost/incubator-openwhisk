@@ -30,13 +30,17 @@ protected[core] case class WhiskNamespace(namespace: Namespace, authkey: BasicAu
 protected[core] object WhiskNamespace extends DefaultJsonProtocol {
   implicit val serdes = new RootJsonFormat[WhiskNamespace] {
     def write(w: WhiskNamespace) =
-      JsObject("name" -> w.namespace.name.toJson, "uuid" -> w.namespace.uuid.toJson, "key" -> w.authkey.key.toJson)
+      JsObject(
+        "name" -> w.namespace.name.toJson,
+        "uuid" -> w.namespace.uuid.toJson,
+        "key" -> w.authkey.key.toJson,
+        "account" -> w.authkey.account.getOrElse("").toJson)
 
     def read(value: JsValue) =
       Try {
         value.asJsObject.getFields("name", "uuid", "key") match {
-          case Seq(JsString(n), JsString(u), JsString(k)) =>
-            WhiskNamespace(Namespace(EntityName(n), UUID(u)), BasicAuthenticationAuthKey(UUID(u), Secret(k)))
+          case Seq(JsString(n), JsString(u), JsString(k), JsString(a)) =>
+            WhiskNamespace(Namespace(EntityName(n), UUID(u)), BasicAuthenticationAuthKey(UUID(u), Secret(k), Some(a)))
         }
       } getOrElse deserializationError("namespace record malformed")
   }
