@@ -170,9 +170,14 @@ protected[actions] trait SequenceActions {
       .andThen {
         case Success((Right(seqActivation), _)) =>
           if (UserEvents.enabled) {
-            EventMessage.from(seqActivation, s"controller${activeAckTopicIndex.asString}", user.namespace.uuid, user) match {
-              case Success(msg) => UserEvents.send(producer, msg)
-              case Failure(t)   => logging.warn(this, s"activation event was not sent: $t")
+            EventMessage.from(seqActivation, s"controller${activeAckTopicIndex.asString}", user) match {
+              case Success(msg) => {
+                logging.warn(
+                  this,
+                  s"activation event was sent: account: ${msg.account}, eventType: ${msg.eventType}, namespace: ${msg.namespace}, subject: ${msg.subject}, userId: ${msg.userId}")
+                UserEvents.send(producer, msg)
+              }
+              case Failure(t) => logging.warn(this, s"activation event was not sent: $t")
             }
           }
           activationStore.storeAfterCheck(seqActivation, context)(transid, notifier = None)

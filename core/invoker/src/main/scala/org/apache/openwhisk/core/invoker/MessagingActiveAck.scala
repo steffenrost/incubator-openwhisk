@@ -58,9 +58,14 @@ class MessagingActiveAck(producer: MessageProducer, instance: InvokerInstanceId,
     // UserMetrics are sent, when the slot is free again. This ensures, that all metrics are sent.
     if (acknowledegment.isSlotFree.nonEmpty) {
       eventSender.foreach { s =>
-        EventMessage.from(activationResult, source, user.namespace.uuid, user) match {
-          case Success(msg) => s.send(msg)
-          case Failure(t)   => logging.error(this, s"activation event was not sent: $t")
+        EventMessage.from(activationResult, source, user) match {
+          case Success(msg) => {
+            logging.warn(
+              this,
+              s"activation event was sent: account: ${msg.account}, eventType: ${msg.eventType}, namespace: ${msg.namespace}, subject: ${msg.subject}, userId: ${msg.userId}")
+            s.send(msg)
+          }
+          case Failure(t) => logging.error(this, s"activation event was not sent: $t")
         }
       }
     }

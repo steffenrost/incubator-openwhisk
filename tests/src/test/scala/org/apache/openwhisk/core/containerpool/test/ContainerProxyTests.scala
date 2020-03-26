@@ -173,7 +173,8 @@ class ContainerProxyTests
 
   trait LoggedAcker extends InvokerReactive.ActiveAck {
     def calls =
-      mutable.Buffer[(TransactionId, WhiskActivation, Boolean, ControllerInstanceId, UUID, AcknowledegmentMessage)]()
+      mutable
+        .Buffer[(TransactionId, WhiskActivation, Boolean, ControllerInstanceId, Identity, AcknowledegmentMessage)]()
 
     def verifyAnnotations(activation: WhiskActivation, a: ExecutableWhiskAction) = {
       activation.annotations.get("limits") shouldBe Some(a.limits.toJson)

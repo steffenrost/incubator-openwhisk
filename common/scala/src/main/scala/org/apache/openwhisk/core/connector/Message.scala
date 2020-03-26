@@ -407,7 +407,7 @@ object EventMessage extends DefaultJsonProtocol {
       "account",
       "timestamp")
 
-  def from(a: WhiskActivation, source: String, userId: UUID, user: Identity): Try[EventMessage] = {
+  def from(a: WhiskActivation, source: String, user: Identity): Try[EventMessage] = {
     Activation.from(a).map { body =>
       EventMessage(
         source,
