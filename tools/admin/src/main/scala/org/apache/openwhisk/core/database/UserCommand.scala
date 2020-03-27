@@ -179,7 +179,7 @@ class UserCommand extends Subcommand("user") with WhiskCommand {
           authStore.put(newAuth).map(_ => Right(authKey.compact))
         } else if (create.revoke.isSupplied) {
           val updatedAuthKey = auth.namespaces.find(_.namespace.name == nsToUpdate).get.authkey
-          val newAuthKey = new BasicAuthenticationAuthKey(updatedAuthKey.uuid, Secret(), updatedAuthKey.account)
+          val newAuthKey = new BasicAuthenticationAuthKey(updatedAuthKey.uuid, Secret())
 
           val newNS = existingNS + WhiskNamespace(create.desiredNamespace(newAuthKey), newAuthKey)
           val newAuth = WhiskAuth(auth.subject, newNS).revision[WhiskAuth](auth.rev)

@@ -62,7 +62,7 @@ class MessagingActiveAck(producer: MessageProducer, instance: InvokerInstanceId,
           case Success(msg) => {
             logging.warn(
               this,
-              s"activation event was sent: account: ${msg.account}, eventType: ${msg.eventType}, namespace: ${msg.namespace}, subject: ${msg.subject}, userId: ${msg.userId}")
+              s"activation event was sent: namespace_crn: ${msg.namespace_crn}, eventType: ${msg.eventType}, namespace: ${msg.namespace}, subject: ${msg.subject}, userId: ${msg.userId}")
             s.send(msg)
           }
           case Failure(t) => logging.error(this, s"activation event was not sent: $t")

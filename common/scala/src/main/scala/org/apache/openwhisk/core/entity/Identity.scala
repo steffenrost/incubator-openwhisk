@@ -17,6 +17,8 @@
 
 package org.apache.openwhisk.core.entity
 
+import java.util.Base64
+
 import org.apache.openwhisk.common.{Logging, TransactionId}
 import org.apache.openwhisk.core.database.{
   MultipleReadersSingleWriterCache,
@@ -26,10 +28,14 @@ import org.apache.openwhisk.core.database.{
 }
 import org.apache.openwhisk.core.entitlement.Privilege
 import org.apache.openwhisk.core.entity.types.AuthStore
+import pureconfig._
+import pureconfig.generic.auto._
 import spray.json._
 
 import scala.concurrent.Future
 import scala.util.Try
+
+final case class CRNConfig(environment: String, region: String)
 
 case class UserLimits(invocationsPerMinute: Option[Int] = None,
                       concurrentInvocations: Option[Int] = None,
@@ -56,6 +62,9 @@ protected[core] case class Identity(subject: Subject,
                                     limits: UserLimits = UserLimits.standardUserLimits)
 
 object Identity extends MultipleReadersSingleWriterCache[Option[Identity], DocInfo] with DefaultJsonProtocol {
+
+  private val blueAuthConfigNamespace = "whisk.blueauth"
+  val crnConfig: CRNConfig = loadConfigOrThrow[CRNConfig](blueAuthConfigNamespace)
 
   private val viewName = WhiskQueries.view(WhiskQueries.dbConfig.subjectsDdoc, "identities").name
 
@@ -142,11 +151,16 @@ object Identity extends MultipleReadersSingleWriterCache[Option[Identity], DocIn
         val JsString(secret) = value("key")
         val JsString(namespace) = value("namespace")
         val account = JsObject(value).fields.get("account").map(_.toString()).getOrElse("")
+        val crn =
+          if (account.isEmpty) ""
+          else s"crn:v1:${crnConfig.environment}:public:functions:${crnConfig.region}:a/${account}:::"
+        val crnEncoded = if (crn.isEmpty) "" else Base64.getEncoder.encodeToString(crn.getBytes)
+        logger.info(this, s"crn: $crn (crn encoded: $crnEncoded) for namespace $namespace and account $account")
+
         Identity(
           subject,
           Namespace(EntityName(namespace), UUID(uuid)),
-          if (account.isEmpty) BasicAuthenticationAuthKey(UUID(uuid), Secret(secret))
-          else BasicAuthenticationAuthKey(UUID(uuid), Secret(secret), Some(account)),
+          BasicAuthenticationAuthKey(UUID(uuid), Secret(secret), crnEncoded),
           Privilege.ALL,
           limits)
       case _ =>

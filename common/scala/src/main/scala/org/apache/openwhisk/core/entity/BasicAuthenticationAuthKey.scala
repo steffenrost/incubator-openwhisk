@@ -27,12 +27,17 @@ import spray.json.DefaultJsonProtocol._
  * @param uuid the uuid assured to be non-null because both types are values
  * @param key the key assured to be non-null because both types are values
  */
-protected[core] case class BasicAuthenticationAuthKey(uuid: UUID, key: Secret, account: Option[String] = None)
-    extends GenericAuthKey(JsObject("api_key" -> s"$uuid:$key".toJson, "account" -> account.getOrElse("").toJson)) {
-  def revoke = new BasicAuthenticationAuthKey(uuid, Secret(), account)
+protected[core] case class BasicAuthenticationAuthKey(uuid: UUID, key: Secret, namespaceCrn: String = "")
+    extends GenericAuthKey(JsObject("api_key" -> s"$uuid:$key".toJson, "namespace_crn" -> namespaceCrn.toJson)) {
+  def revoke = new BasicAuthenticationAuthKey(uuid, Secret(), namespaceCrn)
   def compact: String = s"$uuid:$key"
   override def toString: String = uuid.toString
   override def getCredentials: Option[HttpCredentials] = Some(BasicHttpCredentials(uuid.asString, key.asString))
+  override def equals(that: Any): Boolean =
+    that match {
+      case that: BasicAuthenticationAuthKey => (this.compact == that.asInstanceOf[BasicAuthenticationAuthKey].compact)
+      case _                                => false
+    }
 }
 
 protected[core] object BasicAuthenticationAuthKey {
@@ -54,12 +59,12 @@ protected[core] object BasicAuthenticationAuthKey {
       case Nil         => ("", "")
     }
 
-    new BasicAuthenticationAuthKey(UUID(uuid.trim), Secret(secret.trim), None)
+    new BasicAuthenticationAuthKey(UUID(uuid.trim), Secret(secret.trim))
   }
 
   /**
    * Creates an auth key for a randomly generated UUID with a randomly generated secret.
    */
-  protected[core] def apply(): BasicAuthenticationAuthKey = new BasicAuthenticationAuthKey(UUID(), Secret(), None)
+  protected[core] def apply(): BasicAuthenticationAuthKey = new BasicAuthenticationAuthKey(UUID(), Secret())
 
 }

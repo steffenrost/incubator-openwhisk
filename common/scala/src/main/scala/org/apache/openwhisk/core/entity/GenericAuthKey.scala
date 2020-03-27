@@ -30,12 +30,10 @@ import spray.json._
  */
 protected[core] class GenericAuthKey(val toEnvironment: JsObject) {
   def getCredentials: Option[HttpCredentials] = None
-  def getAuthKey: JsValue = toEnvironment.fields.get("api_key").getOrElse(JsNull)
   def canEqual(a: Any) = a.isInstanceOf[GenericAuthKey]
   override def equals(that: Any): Boolean =
     that match {
-      //case that: GenericAuthKey => (this.toEnvironment == that.asInstanceOf[GenericAuthKey].toEnvironment)
-      case that: GenericAuthKey => (this.getAuthKey == that.asInstanceOf[GenericAuthKey].getAuthKey)
+      case that: GenericAuthKey => (this.toEnvironment == that.asInstanceOf[GenericAuthKey].toEnvironment)
       case _                    => false
     }
 }
