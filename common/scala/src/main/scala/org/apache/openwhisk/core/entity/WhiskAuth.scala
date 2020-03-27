@@ -38,7 +38,7 @@ protected[core] object WhiskNamespace extends DefaultJsonProtocol {
 
     def read(value: JsValue) =
       Try {
-        value.asJsObject.getFields("name", "uuid", "key") match {
+        value.asJsObject.getFields("name", "uuid", "key", "account") match {
           case Seq(JsString(n), JsString(u), JsString(k), JsString(a)) =>
             WhiskNamespace(Namespace(EntityName(n), UUID(u)), BasicAuthenticationAuthKey(UUID(u), Secret(k), Some(a)))
         }
