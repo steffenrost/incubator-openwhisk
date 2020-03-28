@@ -388,7 +388,7 @@ case class EventMessage(source: String,
                         namespace: String,
                         userId: UUID,
                         eventType: String,
-                        namespace_crn: String = "",
+                        namespace_crn_encoded: String = "",
                         timestamp: Long = System.currentTimeMillis())
     extends Message {
   override def serialize = EventMessage.format.write(this).compactPrint
@@ -404,7 +404,7 @@ object EventMessage extends DefaultJsonProtocol {
       "namespace",
       "userId",
       "eventType",
-      "namespace_crn",
+      "namespace_crn_encoded",
       "timestamp")
 
   def from(a: WhiskActivation, source: String, user: Identity): Try[EventMessage] = {
@@ -416,7 +416,7 @@ object EventMessage extends DefaultJsonProtocol {
         a.namespace.toString,
         user.namespace.uuid,
         body.typeName,
-        user.authkey.toEnvironment.fields.get("namespace_crn").map(_.toString).getOrElse(""))
+        user.authkey.toEnvironment.fields.get("namespace_crn_encoded").map(_.toString).getOrElse(""))
     }
   }
 

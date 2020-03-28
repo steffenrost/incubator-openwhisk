@@ -64,7 +64,9 @@ protected[core] case class Identity(subject: Subject,
 object Identity extends MultipleReadersSingleWriterCache[Option[Identity], DocInfo] with DefaultJsonProtocol {
 
   private val blueAuthConfigNamespace = "whisk.blueauth"
-  val crnConfig: CRNConfig = loadConfigOrThrow[CRNConfig](blueAuthConfigNamespace)
+  private val crnConfig = loadConfig[CRNConfig](blueAuthConfigNamespace).toOption
+  private val environment = crnConfig.map(_.environment).getOrElse("<environment>")
+  private val region = crnConfig.map(_.region).getOrElse("<region>")
 
   private val viewName = WhiskQueries.view(WhiskQueries.dbConfig.subjectsDdoc, "identities").name
 
@@ -150,10 +152,10 @@ object Identity extends MultipleReadersSingleWriterCache[Option[Identity], DocIn
         val JsString(uuid) = value("uuid")
         val JsString(secret) = value("key")
         val JsString(namespace) = value("namespace")
-        val account = JsObject(value).fields.get("account").map(_.toString()).getOrElse("")
+        val JsString(account) = JsObject(value).fields.get("account").map(_).getOrElse(JsString(""))
         val crn =
           if (account.isEmpty) ""
-          else s"crn:v1:${crnConfig.environment}:public:functions:${crnConfig.region}:a/${account}:::"
+          else s"crn:v1:${environment}:public:functions:${region}:a/${account}:::"
         val crnEncoded = if (crn.isEmpty) "" else Base64.getEncoder.encodeToString(crn.getBytes)
         logger.info(this, s"crn: $crn (crn encoded: $crnEncoded) for namespace $namespace and account $account")
 
