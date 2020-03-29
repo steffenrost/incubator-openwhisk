@@ -152,7 +152,7 @@ object Identity extends MultipleReadersSingleWriterCache[Option[Identity], DocIn
         val JsString(uuid) = value("uuid")
         val JsString(secret) = value("key")
         val JsString(namespace) = value("namespace")
-        val JsString(account) = JsObject(value).fields.get("account").getOrElse(JsString(""))
+        val JsString(account) = JsObject(value).fields.get("account").getOrElse(JsString.empty)
         val crn =
           if (account.isEmpty) ""
           else s"crn:v1:${environment}:public:functions:${region}:a/${account}:::"

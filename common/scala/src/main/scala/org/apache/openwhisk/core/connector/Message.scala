@@ -409,14 +409,9 @@ object EventMessage extends DefaultJsonProtocol {
 
   def from(a: WhiskActivation, source: String, user: Identity): Try[EventMessage] = {
     Activation.from(a).map { body =>
-      EventMessage(
-        source,
-        body,
-        a.subject,
-        a.namespace.toString,
-        user.namespace.uuid,
-        body.typeName,
-        user.authkey.toEnvironment.fields.get("namespace_crn_encoded").map(_.toString).getOrElse(""))
+      val JsString(crnEncoded) =
+        user.authkey.toEnvironment.fields.get("namespace_crn_encoded").getOrElse(JsString.empty)
+      EventMessage(source, body, a.subject, a.namespace.toString, user.namespace.uuid, body.typeName, crnEncoded)
     }
   }
 
