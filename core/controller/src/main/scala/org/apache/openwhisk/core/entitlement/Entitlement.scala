@@ -38,6 +38,7 @@ import org.apache.openwhisk.http.Messages
 import org.apache.openwhisk.core.connector.MessagingProvider
 import org.apache.openwhisk.spi.SpiLoader
 import org.apache.openwhisk.spi.Spi
+import spray.json.JsString
 
 object types {
   type Entitlements = TrieMap[(Subject, String), Set[Privilege]]
@@ -389,6 +390,8 @@ protected[core] abstract class EntitlementProvider(
           case c: ConcurrentRateLimit => {
             val metric =
               Metric("ConcurrentInvocations", c.count + 1)
+            val JsString(crnEncoded) =
+              user.authkey.toEnvironment.fields.get("namespace_crn_encoded").getOrElse(JsString.empty)
             UserEvents.send(
               eventProducer,
               EventMessage(
@@ -397,7 +400,8 @@ protected[core] abstract class EntitlementProvider(
                 user.subject,
                 user.namespace.name.toString,
                 userId,
-                metric.typeName))
+                metric.typeName,
+                crnEncoded))
           }
           case _ => // ignore
         }
@@ -405,6 +409,8 @@ protected[core] abstract class EntitlementProvider(
       } else {
         logging.info(this, s"'${user.namespace.name}' has exceeded its throttle limit, ${limit.errorMsg}")
         val metric = Metric(limit.limitName, 1)
+        val JsString(crnEncoded) =
+          user.authkey.toEnvironment.fields.get("namespace_crn_encoded").getOrElse(JsString.empty)
         UserEvents.send(
           eventProducer,
           EventMessage(
@@ -413,7 +419,8 @@ protected[core] abstract class EntitlementProvider(
             user.subject,
             user.namespace.name.toString,
             userId,
-            metric.typeName))
+            metric.typeName,
+            crnEncoded))
         Future.failed(RejectRequest(TooManyRequests, limit.errorMsg))
       }
     }

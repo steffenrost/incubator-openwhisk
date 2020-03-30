@@ -17,6 +17,8 @@
 
 package org.apache.openwhisk.core.entity
 
+import java.util.Base64
+
 import org.apache.openwhisk.common.{Logging, TransactionId}
 import org.apache.openwhisk.core.database.{
   MultipleReadersSingleWriterCache,
@@ -26,10 +28,14 @@ import org.apache.openwhisk.core.database.{
 }
 import org.apache.openwhisk.core.entitlement.Privilege
 import org.apache.openwhisk.core.entity.types.AuthStore
+import pureconfig._
+import pureconfig.generic.auto._
 import spray.json._
 
 import scala.concurrent.Future
 import scala.util.Try
+
+final case class CRNConfig(environment: String, region: String)
 
 case class UserLimits(invocationsPerMinute: Option[Int] = None,
                       concurrentInvocations: Option[Int] = None,
@@ -56,6 +62,11 @@ protected[core] case class Identity(subject: Subject,
                                     limits: UserLimits = UserLimits.standardUserLimits)
 
 object Identity extends MultipleReadersSingleWriterCache[Option[Identity], DocInfo] with DefaultJsonProtocol {
+
+  private val blueAuthConfigNamespace = "whisk.blueauth"
+  private val crnConfig = loadConfig[CRNConfig](blueAuthConfigNamespace).toOption
+  private val environment = crnConfig.map(_.environment).getOrElse("<environment>")
+  private val region = crnConfig.map(_.region).getOrElse("<region>")
 
   private val viewName = WhiskQueries.view(WhiskQueries.dbConfig.subjectsDdoc, "identities").name
 
@@ -141,10 +152,16 @@ object Identity extends MultipleReadersSingleWriterCache[Option[Identity], DocIn
         val JsString(uuid) = value("uuid")
         val JsString(secret) = value("key")
         val JsString(namespace) = value("namespace")
+        val JsString(account) = JsObject(value).fields.get("account").getOrElse(JsString.empty)
+        val crn =
+          if (account.isEmpty) ""
+          else s"crn:v1:${environment}:public:functions:${region}:a/${account}:s-${uuid}::"
+        val crnEncoded = if (crn.isEmpty) "" else Base64.getEncoder.encodeToString(crn.getBytes)
+
         Identity(
           subject,
           Namespace(EntityName(namespace), UUID(uuid)),
-          BasicAuthenticationAuthKey(UUID(uuid), Secret(secret)),
+          BasicAuthenticationAuthKey(UUID(uuid), Secret(secret), crnEncoded),
           Privilege.ALL,
           limits)
       case _ =>

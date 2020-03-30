@@ -170,7 +170,7 @@ protected[actions] trait SequenceActions {
       .andThen {
         case Success((Right(seqActivation), _)) =>
           if (UserEvents.enabled) {
-            EventMessage.from(seqActivation, s"controller${activeAckTopicIndex.asString}", user.namespace.uuid) match {
+            EventMessage.from(seqActivation, s"controller${activeAckTopicIndex.asString}", user) match {
               case Success(msg) => UserEvents.send(producer, msg)
               case Failure(t)   => logging.warn(this, s"activation event was not sent: $t")
             }

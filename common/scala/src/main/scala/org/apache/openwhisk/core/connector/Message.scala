@@ -388,6 +388,7 @@ case class EventMessage(source: String,
                         namespace: String,
                         userId: UUID,
                         eventType: String,
+                        namespace_crn_encoded: String = "",
                         timestamp: Long = System.currentTimeMillis())
     extends Message {
   override def serialize = EventMessage.format.write(this).compactPrint
@@ -395,11 +396,22 @@ case class EventMessage(source: String,
 
 object EventMessage extends DefaultJsonProtocol {
   implicit val format =
-    jsonFormat(EventMessage.apply _, "source", "body", "subject", "namespace", "userId", "eventType", "timestamp")
+    jsonFormat(
+      EventMessage.apply _,
+      "source",
+      "body",
+      "subject",
+      "namespace",
+      "userId",
+      "eventType",
+      "namespace_crn_encoded",
+      "timestamp")
 
-  def from(a: WhiskActivation, source: String, userId: UUID): Try[EventMessage] = {
+  def from(a: WhiskActivation, source: String, user: Identity): Try[EventMessage] = {
     Activation.from(a).map { body =>
-      EventMessage(source, body, a.subject, a.namespace.toString, userId, body.typeName)
+      val JsString(crnEncoded) =
+        user.authkey.toEnvironment.fields.get("namespace_crn_encoded").getOrElse(JsString.empty)
+      EventMessage(source, body, a.subject, a.namespace.toString, user.namespace.uuid, body.typeName, crnEncoded)
     }
   }
 

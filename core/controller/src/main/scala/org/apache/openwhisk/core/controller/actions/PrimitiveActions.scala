@@ -569,7 +569,7 @@ protected[actions] trait PrimitiveActions {
       duration = Some(session.duration))
 
     if (UserEvents.enabled) {
-      EventMessage.from(activation, s"controller${activeAckTopicIndex.asString}", user.namespace.uuid) match {
+      EventMessage.from(activation, s"controller${activeAckTopicIndex.asString}", user) match {
         case Success(msg) => UserEvents.send(producer, msg)
         case Failure(t)   => logging.warn(this, s"activation event was not sent: $t")
       }
