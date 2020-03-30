@@ -59,13 +59,8 @@ class MessagingActiveAck(producer: MessageProducer, instance: InvokerInstanceId,
     if (acknowledegment.isSlotFree.nonEmpty) {
       eventSender.foreach { s =>
         EventMessage.from(activationResult, source, user) match {
-          case Success(msg) => {
-            logging.warn(
-              this,
-              s"activation event was sent: namespace_crn: ${msg.namespace_crn_encoded}, eventType: ${msg.eventType}, namespace: ${msg.namespace}, subject: ${msg.subject}, userId: ${msg.userId}")
-            s.send(msg)
-          }
-          case Failure(t) => logging.error(this, s"activation event was not sent: $t")
+          case Success(msg) => s.send(msg)
+          case Failure(t)   => logging.error(this, s"activation event was not sent: $t")
         }
       }
     }

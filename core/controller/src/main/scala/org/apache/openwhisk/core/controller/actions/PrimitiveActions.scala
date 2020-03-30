@@ -570,13 +570,8 @@ protected[actions] trait PrimitiveActions {
 
     if (UserEvents.enabled) {
       EventMessage.from(activation, s"controller${activeAckTopicIndex.asString}", user) match {
-        case Success(msg) => {
-          logging.warn(
-            this,
-            s"activation event was sent: namespace crn: ${msg.namespace_crn_encoded}, eventType: ${msg.eventType}, namespace: ${msg.namespace}, subject: ${msg.subject}, userId: ${msg.userId}")
-          UserEvents.send(producer, msg)
-        }
-        case Failure(t) => logging.warn(this, s"activation event was not sent: $t")
+        case Success(msg) => UserEvents.send(producer, msg)
+        case Failure(t)   => logging.warn(this, s"activation event was not sent: $t")
       }
     }
 

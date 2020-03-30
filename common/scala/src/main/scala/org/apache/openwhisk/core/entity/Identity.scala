@@ -155,9 +155,8 @@ object Identity extends MultipleReadersSingleWriterCache[Option[Identity], DocIn
         val JsString(account) = JsObject(value).fields.get("account").getOrElse(JsString.empty)
         val crn =
           if (account.isEmpty) ""
-          else s"crn:v1:${environment}:public:functions:${region}:a/${account}:${uuid}::"
+          else s"crn:v1:${environment}:public:functions:${region}:a/${account}:s-${uuid}::"
         val crnEncoded = if (crn.isEmpty) "" else Base64.getEncoder.encodeToString(crn.getBytes)
-        logger.info(this, s"crn: $crn (crn encoded: $crnEncoded) for namespace $namespace and account $account")
 
         Identity(
           subject,

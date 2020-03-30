@@ -57,7 +57,7 @@ object InvokerReactive extends InvokerProvider {
    * @param activationResult is the activation result
    * @param blockingInvoke is true iff the activation was a blocking request
    * @param controllerInstance the originating controller/loadbalancer id
-   * @param user is the UUID for the namespace owning the activation
+   * @param user is the user for the namespace owning the activation
    * @param acknowledegment the acknowledgement message to send
    */
   trait ActiveAck {
