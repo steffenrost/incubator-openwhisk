@@ -60,6 +60,14 @@ import org.apache.openwhisk.http.LenientSprayJsonSupport._
 import org.apache.openwhisk.spi.SpiLoader
 import org.apache.openwhisk.utils.JsHelpers._
 import org.apache.openwhisk.core.entity.Exec
+import pureconfig._
+import pureconfig.generic.auto._
+
+final case class WebActionsFilterConfig(enabled: Boolean,
+                                        headerField: String,
+                                        domainSuffix: String,
+                                        fallbackMediaType: String,
+                                        whitelistedNamespaces: String)
 
 protected[controller] sealed class WebApiDirectives(prefix: String = "__ow_") {
   // enforce the presence of an extension (e.g., .http) in the URI path
@@ -106,12 +114,14 @@ private case class Context(propertyMap: WebApiDirectives,
   // attach the body to the Context
   def withBody(b: Option[JsValue]) = Context(propertyMap, method, headers, path, query, b)
 
-  def metadata(user: Option[Identity]): Map[String, JsValue] = {
+  def metadata(user: Option[Identity], keepCookies: Boolean = true): Map[String, JsValue] = {
     Map(
       propertyMap.method -> method.value.toLowerCase.toJson,
       propertyMap.headers -> headers
         .collect {
-          case h if h.name != `Timeout-Access`.name => h.lowercaseName -> h.value
+          case h if h.name != `Timeout-Access`.name && (keepCookies || h.lowercaseName != Cookie.lowercaseName) => {
+            h.lowercaseName -> h.value
+          }
         }
         .toMap
         .toJson,
@@ -119,7 +129,9 @@ private case class Context(propertyMap: WebApiDirectives,
       user.map(u => propertyMap.namespace -> u.namespace.name.asString.toJson)
   }
 
-  def toActionArgument(user: Option[Identity], boxQueryAndBody: Boolean): Map[String, JsValue] = {
+  def toActionArgument(user: Option[Identity],
+                       boxQueryAndBody: Boolean,
+                       keepCookies: Boolean = true): Map[String, JsValue] = {
     val queryParams = if (boxQueryAndBody) {
       Map(propertyMap.query -> JsString(query.toString))
     } else {
@@ -137,7 +149,7 @@ private case class Context(propertyMap: WebApiDirectives,
     }
 
     // precedence order is: query params -> body (last wins)
-    metadata(user) ++ queryParams ++ bodyParams
+    metadata(user, keepCookies) ++ queryParams ++ bodyParams
   }
 }
 
@@ -154,6 +166,10 @@ protected[core] object WhiskWebActionsApi extends Directives {
   }
 
   private val defaultMediaTranscoder: MediaExtension = mediaTranscoders.find(_.extension == ".http").get
+  def isHtmlExtension(extension: MediaExtension): Boolean = extension.extension == ".html"
+  def isHttpExtension(extension: MediaExtension): Boolean = extension.extension == ".http"
+  def mediaTranscoderByExtension(extension: String): MediaExtension =
+    mediaTranscoders.find(_.extension == extension).get
 
   val allowedExtensions: Set[String] = mediaTranscoders.map(_.extension).toSet
 
@@ -180,24 +196,33 @@ protected[core] object WhiskWebActionsApi extends Directives {
    * @param extension  the supported media types for action response
    * @param transcoder the HTTP decoder and terminator for the extension
    */
-  protected case class MediaExtension(extension: String,
-                                      transcoder: (JsValue, TransactionId, WebApiDirectives) => Route) {
+  protected case class MediaExtension(
+    extension: String,
+    transcoder: (JsValue, TransactionId, WebApiDirectives, Option[MediaExtension]) => Route) {
     val extensionLength = extension.length
   }
 
-  private def resultAsHtml(result: JsValue, transid: TransactionId, rp: WebApiDirectives) = {
-    val htmlResult = result match {
-      case JsObject(fields) => fields.get("body").orElse(fields.get("html")).getOrElse(JsNull)
-      case _                => result
-    }
+  private def resultAsHtml(result: JsValue,
+                           transid: TransactionId,
+                           rp: WebApiDirectives,
+                           responseTypeFallback: Option[MediaExtension] = None) = {
+    responseTypeFallback.map(_.transcoder(result, transid, rp, None)).getOrElse {
+      val htmlResult = result match {
+        case JsObject(fields) => fields.get("body").orElse(fields.get("html")).getOrElse(JsNull)
+        case _                => result
+      }
 
-    htmlResult match {
-      case JsString(html) => complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, html))
-      case _              => terminate(BadRequest, Messages.invalidMedia(`text/html`))(transid, jsonPrettyPrinter)
+      htmlResult match {
+        case JsString(html) => complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, html))
+        case _              => terminate(BadRequest, Messages.invalidMedia(`text/html`))(transid, jsonPrettyPrinter)
+      }
     }
   }
 
-  private def resultAsSvg(result: JsValue, transid: TransactionId, rp: WebApiDirectives) = {
+  private def resultAsSvg(result: JsValue,
+                          transid: TransactionId,
+                          rp: WebApiDirectives,
+                          responseTypeFallback: Option[MediaExtension] = None) = {
     val svgResult = result match {
       case JsObject(fields) => fields.get("body").orElse(fields.get("svg")).getOrElse(JsNull)
       case _                => result
@@ -209,7 +234,10 @@ protected[core] object WhiskWebActionsApi extends Directives {
     }
   }
 
-  private def resultAsText(result: JsValue, transid: TransactionId, rp: WebApiDirectives) = {
+  private def resultAsText(result: JsValue,
+                           transid: TransactionId,
+                           rp: WebApiDirectives,
+                           responseTypeFallback: Option[MediaExtension] = None) = {
     val txtResult = result match {
       case JsObject(fields) => fields.get("body").orElse(fields.get("text"))
       case _                => Some(result)
@@ -226,7 +254,10 @@ protected[core] object WhiskWebActionsApi extends Directives {
     }
   }
 
-  private def resultAsJson(result: JsValue, transid: TransactionId, rp: WebApiDirectives) = {
+  private def resultAsJson(result: JsValue,
+                           transid: TransactionId,
+                           rp: WebApiDirectives,
+                           responseTypeFallback: Option[MediaExtension] = None) = {
     result match {
       case r: JsObject => complete(OK, r)
       case r: JsArray  => complete(OK, r)
@@ -234,7 +265,10 @@ protected[core] object WhiskWebActionsApi extends Directives {
     }
   }
 
-  private def resultAsHttp(result: JsValue, transid: TransactionId, rp: WebApiDirectives) = {
+  private def resultAsHttp(result: JsValue,
+                           transid: TransactionId,
+                           rp: WebApiDirectives,
+                           responseTypeFallback: Option[MediaExtension] = None) = {
     Try {
       val JsObject(fields) = result
       val headers = fields.get("headers").map {
@@ -261,7 +295,8 @@ protected[core] object WhiskWebActionsApi extends Directives {
       }
 
       body.collect {
-        case JsString(str) if str.nonEmpty   => interpretHttpResponse(code.getOrElse(OK), headers, str, transid)
+        case JsString(str) if str.nonEmpty =>
+          interpretHttpResponse(code.getOrElse(OK), headers, str, result, transid, rp, responseTypeFallback)
         case JsString(str) /* str.isEmpty */ => respondWithEmptyEntity(code.getOrElse(NoContent), headers)
         case js if js != JsNull              => interpretHttpResponseAsJson(code.getOrElse(OK), headers, js, transid)
       } getOrElse respondWithEmptyEntity(code.getOrElse(NoContent), headers)
@@ -339,32 +374,45 @@ protected[core] object WhiskWebActionsApi extends Directives {
     }
   }
 
-  private def interpretHttpResponse(code: StatusCode, headers: List[RawHeader], str: String, transid: TransactionId) = {
-    findContentTypeInHeader(headers, transid, `text/html`).flatMap { mediaType =>
-      val ct = ContentType(mediaType, () => HttpCharsets.`UTF-8`)
-      ct match {
-        // TODO: remove this extract check for base64 on json response
-        // this is here for legacy reasons to not brake old webactions returning base64 json that have not migrated yet
-        case nonbinary: ContentType.NonBinary if (isJsonFamily(mediaType) && Exec.isBinaryCode(str)) =>
-          Try(Base64.getDecoder().decode(str)).map(HttpEntity(ct, _))
-        case nonbinary: ContentType.NonBinary => Success(HttpEntity(nonbinary, str))
+  private def interpretHttpResponse(code: StatusCode,
+                                    headers: List[RawHeader],
+                                    str: String,
+                                    result: JsValue,
+                                    transid: TransactionId,
+                                    rp: WebApiDirectives,
+                                    responseTypeFallback: Option[MediaExtension] = None) = {
+    val mt = findContentTypeInHeader(headers, transid, `text/html`)
+    // fallback to configured response type if set and internet media type is requested
+    if (mt.isSuccess && responseTypeFallback.isDefined && (mt.get == `text/html` || mt.get.value.equals(
+          "application/xhtml+xml")))
+      responseTypeFallback.get.transcoder(result, transid, rp, None)
+    else
+      mt.flatMap { mediaType =>
+        //findContentTypeInHeader(headers, transid, `text/html`).flatMap { mediaType =>
+        val ct = ContentType(mediaType, () => HttpCharsets.`UTF-8`)
+        ct match {
+          // TODO: remove this extract check for base64 on json response
+          // this is here for legacy reasons to not brake old webactions returning base64 json that have not migrated yet
+          case nonbinary: ContentType.NonBinary if (isJsonFamily(mediaType) && Exec.isBinaryCode(str)) =>
+            Try(Base64.getDecoder().decode(str)).map(HttpEntity(ct, _))
+          case nonbinary: ContentType.NonBinary => Success(HttpEntity(nonbinary, str))
 
-        // because of the default charset provided to the content type constructor
-        // the remaining content types to match against are binary at this point
-        case _ /* ContentType.Binary */ => Try(Base64.getDecoder().decode(str)).map(HttpEntity(ct, _))
-      }
-    } match {
-      case Success(entity) =>
-        respondWithHeaders(removeContentTypeHeader(headers)) {
-          complete(code, entity)
+          // because of the default charset provided to the content type constructor
+          // the remaining content types to match against are binary at this point
+          case _ /* ContentType.Binary */ => Try(Base64.getDecoder().decode(str)).map(HttpEntity(ct, _))
         }
+      } match {
+        case Success(entity) =>
+          respondWithHeaders(removeContentTypeHeader(headers)) {
+            complete(code, entity)
+          }
 
-      case Failure(RejectRequest(code, message)) =>
-        terminate(code, message)(transid, jsonPrettyPrinter)
+        case Failure(RejectRequest(code, message)) =>
+          terminate(code, message)(transid, jsonPrettyPrinter)
 
-      case _ =>
-        terminate(BadRequest, Messages.httpContentTypeError)(transid, jsonPrettyPrinter)
-    }
+        case _ =>
+          terminate(BadRequest, Messages.httpContentTypeError)(transid, jsonPrettyPrinter)
+      }
   }
 
   private def removeContentTypeHeader(headers: List[RawHeader]) =
@@ -378,6 +426,21 @@ trait WhiskWebActionsApi
     with CustomHeaders
     with CorsSettings.WebActions {
   services: WhiskServices =>
+
+  private val webActionsFilterConfigNamespace = "whisk.webactions.filter"
+  private val webActionsFilterConfig = loadConfig[WebActionsFilterConfig](webActionsFilterConfigNamespace).toOption
+  private val filterWebActionsEnabled = webActionsFilterConfig.map(_.enabled).getOrElse(false)
+  private val filterWebActionsHeaderField = webActionsFilterConfig.map(_.headerField).getOrElse("host")
+  private val filterWebActionsHostDomainSuffix = webActionsFilterConfig.map(_.domainSuffix).getOrElse("cloud.ibm.com")
+  private val filterWebActionsFallbackMediaType = webActionsFilterConfig.map(_.fallbackMediaType).getOrElse(".text")
+  private val filterWebActionsWhitelistedNamespacesFromEnvironment =
+    webActionsFilterConfig.map(_.whitelistedNamespaces).getOrElse("None")
+  private val filterWebActionsWhitelistedNamespaces =
+    if (filterWebActionsWhitelistedNamespacesFromEnvironment.equals("None")) ""
+    else filterWebActionsWhitelistedNamespacesFromEnvironment
+  logging.info(
+    this,
+    s"webActionsFilterConfigNamespace: ${webActionsFilterConfigNamespace}, webActionsFilterConfig: ${webActionsFilterConfig}, filterWebActionsEnabled: ${filterWebActionsEnabled}, filterWebActionsHeaderField: ${filterWebActionsHeaderField}, filterWebActionsHostDomainSuffix: ${filterWebActionsHostDomainSuffix}, filterWebActionsFallbackMediaType: ${filterWebActionsFallbackMediaType}, filterWebActionsWhitelistedNamespaces: ${filterWebActionsWhitelistedNamespaces}")
 
   /** API path invocation path for posting activations directly through the host. */
   protected val webInvokePathSegments: Seq[String]
@@ -617,7 +680,7 @@ trait WhiskWebActionsApi
                              context: Context,
                              isRawHttpAction: Boolean)(implicit transid: TransactionId) = {
 
-    def queuedActivation = {
+    def queuedActivation(keepCookies: Boolean = true) = {
       // checks (1) if any of the query or body parameters override final action parameters
       // computes overrides if any relative to the reserved __ow_* properties, and (2) if
       // action is a raw http handler
@@ -627,18 +690,41 @@ trait WhiskWebActionsApi
       // they will be overwritten
       if (isRawHttpAction || context
             .overrides(webApiDirectives.reservedProperties ++ action.immutableParameters)) {
-        val content = context.toActionArgument(onBehalfOf, isRawHttpAction)
+        val content = context.toActionArgument(onBehalfOf, isRawHttpAction, keepCookies)
         invokeAction(actionOwnerIdentity, action, Some(JsObject(content)), maxWaitForWebActionResult, cause = None)
       } else {
         Future.failed(RejectRequest(BadRequest, Messages.parametersNotAllowed))
       }
     }
 
-    completeRequest(queuedActivation, responseType)
+    // 1) filter out cookie field from request header if:
+    // - web actions filtering is enabled
+    // - request is originated from configured filtered domain (default is cloud.ibm.com)
+    // 2) fall back to configured response type (content-type), default is text/plain if:
+    // - web actions filtering is enabled
+    // - request is originated from configured filtered domain (default domain is cloud.ibm.com)
+    // - url extension is '.html' i.e. content-type text/html is requested
+    // - url extension is '.http' or -none- and the response body returned by the action code is interpreted as text/html
+
+    val filterWebAction =
+      filterWebActionsEnabled && (context.headers.find(_.lowercaseName == filterWebActionsHeaderField) match {
+        case Some(header) =>
+          header.value.endsWith((filterWebActionsHostDomainSuffix))
+        case None => false
+      }) && filterWebActionsWhitelistedNamespaces
+        .split(",")
+        .forall(!_.equals(actionOwnerIdentity.namespace.name.asString))
+    val responseTypeFallback =
+      if (filterWebAction && (WhiskWebActionsApi.isHtmlExtension(responseType) || WhiskWebActionsApi
+            .isHttpExtension(responseType)))
+        Some(WhiskWebActionsApi.mediaTranscoderByExtension(filterWebActionsFallbackMediaType))
+      else None
+    completeRequest(queuedActivation(!filterWebAction), responseType, responseTypeFallback)
   }
 
   private def completeRequest(queuedActivation: Future[Either[ActivationId, WhiskActivation]],
-                              responseType: MediaExtension)(implicit transid: TransactionId) = {
+                              responseType: MediaExtension,
+                              responseTypeFallback: Option[MediaExtension] = None)(implicit transid: TransactionId) = {
     onComplete(queuedActivation) {
       case Success(Right(activation)) =>
         respondWithActivationIdHeader(activation.activationId) {
@@ -657,7 +743,8 @@ trait WhiskWebActionsApi
             val result = getFieldPath(activation.resultAsJson, resultPath)
             result match {
               case Some(projection) =>
-                val marshaler = Future(responseType.transcoder(projection, transid, webApiDirectives))
+                val marshaler =
+                  Future(responseType.transcoder(projection, transid, webApiDirectives, responseTypeFallback))
                 onComplete(marshaler) {
                   case Success(done) => done // all transcoders terminate the connection
                   case Failure(t)    => terminate(InternalServerError)

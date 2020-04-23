@@ -47,7 +47,84 @@ class WskWebActionsTests extends TestHelpers with WskTestHelpers with RestUtil w
 
   protected val testRoutePath: String = "/api/v1/web"
 
+  val whiskEdgeHost = WhiskProperties.getEdgeHost
+  println(s"whiskEdgeHost: ${whiskEdgeHost}")
+
   behavior of "Wsk Web Actions"
+
+  it should "ensure response content-type is text/plain for requested text/html content-type in header field of response for filtered domain" in {
+    assume(whiskEdgeHost.startsWith("fn-dev-")) // for now run the test against our dev environments only
+    withAssetCleaner(wskprops) { (wp, assetHelper) =>
+      val name = "webaction"
+      val file = Some(TestUtils.getTestActionFilename("textBody.js"))
+      val host = getServiceURL()
+      val url = host + s"$testRoutePath/$namespace/default/$name.http"
+      println(s"host: $host, url: $url")
+
+      assetHelper.withCleaner(wsk.action, name) { (action, _) =>
+        action.create(name, file, web = Some("true"))
+      }
+
+      val response = RestAssured.given().config(sslconfig).get(url)
+      response.statusCode shouldBe 200
+      response.header("Content-type") should startWith("text/plain")
+    }
+  }
+
+  it should "ensure response content-type is text/plain for extension .html for filtered domain" in {
+    assume(whiskEdgeHost.startsWith("fn-dev-")) // for now run the test against our dev environments only
+    withAssetCleaner(wskprops) { (wp, assetHelper) =>
+      val name = "webaction"
+      val file = Some(TestUtils.getTestActionFilename("textBody.js"))
+      val host = getServiceURL()
+      val url = host + s"$testRoutePath/$namespace/default/$name.html"
+
+      assetHelper.withCleaner(wsk.action, name) { (action, _) =>
+        action.create(name, file, web = Some("true"))
+      }
+
+      val response = RestAssured.given().config(sslconfig).get(url)
+      response.statusCode shouldBe 200
+      response.header("Content-type") should startWith("text/plain")
+    }
+  }
+
+  it should "filter out cookies for filtered domain" in {
+    assume(whiskEdgeHost.startsWith("fn-dev-")) // for now run the test against our dev environments only
+    withAssetCleaner(wskprops) { (wp, assetHelper) =>
+      val name = "webaction"
+      val file = Some(TestUtils.getTestActionFilename("echo-env.js"))
+      val host = getServiceURL()
+      val url = host + s"$testRoutePath/$namespace/default/$name.json"
+
+      assetHelper.withCleaner(wsk.action, name) { (action, _) =>
+        action.create(name, file, web = Some("true"))
+      }
+
+      val response = RestAssured.given().header("cookie", "USER_TOKEN=yes;USER_TOKEN2=no").config(sslconfig).get(url)
+
+      response.statusCode shouldBe 200
+      response.header("Content-type") shouldBe "application/json"
+
+      val __ow_headers = response.body.asString.parseJson.asJsObject.fields("__ow_headers")
+      val __ow_method = response.body.asString.parseJson.asJsObject.fields("__ow_method")
+      val __ow_path = response.body.asString.parseJson.asJsObject.fields("__ow_path")
+      val env =
+        response.body.asString.parseJson.asJsObject
+          .fields("env")
+          .asJsObject
+          .fields
+          .filter(!_._1.equals("__OW_API_KEY"))
+      println(s"__ow_headers: ${__ow_headers}, __ow_method: ${__ow_method}, __ow_path: ${__ow_path}, env: ${env})")
+      response.body.asString.parseJson.asJsObject
+        .fields("__ow_headers")
+        .asJsObject
+        .fields
+        .get("cookie")
+        .getOrElse("")
+        .toString shouldBe ""
+    }
+  }
 
   it should "ensure __ow_headers contains the proper content-type" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
     val name = "webContenttype"
@@ -243,7 +320,7 @@ class WskWebActionsTests extends TestHelpers with WskTestHelpers with RestUtil w
 
       val response = RestAssured.given().header("accept", "application/json").config(sslconfig).get(url)
       response.statusCode shouldBe 406
-      response.body.asString should include("Resource representation is only available with these types:\\ntext/html")
+      response.body.asString should include("Resource representation is only available with these types:\\ntext/")
   }
 
   it should "support multiple response header values" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
