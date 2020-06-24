@@ -55,18 +55,14 @@ import scala.concurrent.Future
  * @param actorSystem actor system
  * @param materializer materializer
  * @param logging logging
- * @param logPath path for the activity logs
  */
-abstract class AbstractActivityTracker(actorSystem: ActorSystem,
-                                       materializer: ActorMaterializer,
-                                       logging: Logging,
-                                       logPath: String) {
+abstract class AbstractActivityTracker(actorSystem: ActorSystem, materializer: ActorMaterializer, logging: Logging) {
 
   /** requestHandler is called before each request is processed. It collects data that is required for
    * creating activity events. No further processing should be performed in requestHandler. requestHandler
    * should be fast, incoming requests should not be slowed down. No separate future is created for the
-   * requestHandler. Should a requestHandler have to contain long running parts then these parts
-   * should run asynchronously (which in turn might have to be synchronized with responseHandlerAsync).
+   * requestHandler. When a requestHandler needs long running parts then these parts should run
+   * asynchronously (which in turn might have to be synchronized with responseHandlerAsync).
    *
    * @param transid transaction id
    * @param req incoming http request
@@ -85,8 +81,7 @@ abstract class AbstractActivityTracker(actorSystem: ActorSystem,
   def responseHandlerAsync(transid: TransactionId, resp: HttpResponse): Future[Unit]
 
   /**
-   * Check if requestHandler and responseHandler should be called (example: create activity logs
-   * for the crudcontroller only).
+   * Check if requestHandler and responseHandler should be called
    *
    * @return true if requestHandler and responseHandler should be called. Returns false, otherwise.
    */
@@ -100,16 +95,20 @@ abstract class AbstractActivityTracker(actorSystem: ActorSystem,
 // The implementation adds some more information in addition to the CADF standard, see
 // https://test.cloud.ibm.com/docs/Activity-Tracker-with-LogDNA?topic=Activity-Tracker-with-LogDNA-ibm_event_fields#eventTime
 // The implementation works for both BasicAuthenticationDirective and IAMAuthenticationDirective.
-// IAMAuthenticationDirective is an external component from IBM. It it not required to bind this
+// IAMAuthenticationDirective is an external component from IBM. It is not required to bind this
 // component or other external components to openwhisk in order to run the activity tracker implementation
 // with BasicAuthenticationDirective.
 
 /**
- * Configuration for the activity tracker implementation.
+ * Configuration for the activity tracker implementation. All three values should be defined since the
+ * defaults are just good for quick testing. If auditLogMaxFileSize is zero then ActivityTracker
+ * stays inactive.
  *
- * @param runActivityTracker flag that decides whether the acitivity tracker is active or inactive.
+ * @param auditLogFilePath file path for audit logs (default: /tmp)
+ * @param auditLogFileNamePrefix name prefix for audit log files (prefix + timestamp + '.log') (default: component name)
+ * @param auditLogMaxFileSize max file size for an audit log file (default: 0)
  */
-case class ActivityTrackerConfig(runActivityTracker: Boolean)
+case class ActivityTrackerConfig(auditLogFilePath: String, auditLogFileNamePrefix: String, auditLogMaxFileSize: Long)
 
 /**
  * The Activity Tracker collects information about user activities and stores the data in activity log files
@@ -120,6 +119,8 @@ case class ActivityTrackerConfig(runActivityTracker: Boolean)
  * The collected data comprises information about the initiator, the activity, the target service, and the outcome.
  * The entries in the activity log files must follow a specific schema:
  * https://github.ibm.com/activity-tracker/helloATv3/blob/master/eventLinter/events_schema_logdna.json
+ *
+ * The ActivityTracker is activated for the controller and crudcontroller and disabled for invoker.
  *
  * Data collection details:
  *
@@ -148,25 +149,65 @@ case class ActivityTrackerConfig(runActivityTracker: Boolean)
  * @param actorSystem actor system
  * @param materializer materializer
  * @param logging logging
- * @param logPath path for the activity logs
  */
-class ActivityTracker(actorSystem: ActorSystem,
-                      materializer: ActorMaterializer,
-                      logging: Logging,
-                      logPath: String = "/atlogs")
-    extends AbstractActivityTracker(actorSystem, materializer, logging, logPath)
+class ActivityTracker(actorSystem: ActorSystem, materializer: ActorMaterializer, logging: Logging)
+    extends AbstractActivityTracker(actorSystem, materializer, logging)
     with ActivityUtils {
 
-  private val fileStore = new FileStorage("activitylogs", Paths.get(logPath), materializer, logging)
-  private val isCrudController = Kamon.environment.host.toLowerCase.contains("crudcontroller")
-  private val config = loadConfig[ActivityTrackerConfig](ConfigKeys.controller).toOption
-  private val runActivityTracker = config.exists(_.runActivityTracker)
+  private val componentName = Kamon.environment.host.toLowerCase
+  private val isCrudController = componentName.contains("crudcontroller")
+  private val isController = componentName.contains("controller") // controller or crudcontroller
 
+  // config
+  private val configNamespace = ConfigKeys.controller
+  private val config = loadConfig[ActivityTrackerConfig](configNamespace).toOption
+  private val auditLogFilePath: String = config.map(_.auditLogFilePath).getOrElse("/tmp")
+  private val auditLogFileNamePrefix: String = config.map(_.auditLogFileNamePrefix).getOrElse(componentName)
+  // if auditLogMaxFileSize == 0 then ActivityTracker stays inactive
+  private val auditLogMaxFileSize: Long = config.map(_.auditLogMaxFileSize).getOrElse(0)
+
+  private val fileStore =
+    if (isController && auditLogMaxFileSize > 0)
+      new FileStorage(
+        logFilePrefix = auditLogFileNamePrefix,
+        logFileMaxSize = auditLogMaxFileSize,
+        logPath = Paths.get(auditLogFilePath),
+        actorMaterializer = materializer,
+        logging = logging)
+    else null
+
+  /**
+   * ActivityTracker is active for controller and crudcontroller but not for invoker.
+   *
+   * If auditLogMaxFileSize is not configured then ActivityTracker stays inactive.
+   * auditLogFilePath and auditLogFileNamePrefix should also be configured since the defaults
+   * are just good for quick testing.
+   *
+   * @return true if requestHandler and responseHandler should be called. Returns false, otherwise.
+   */
+  override def isActive: Boolean = isController && auditLogMaxFileSize > 0
+
+  /**
+   * Stores a line in the file store. An end-of-line is automatically added.
+   *
+   * @param line string that represents a line in the log
+   */
   def store(line: String): Unit = fileStore.store(line)
 
-  override def isActive: Boolean = runActivityTracker
+  /**
+   * Function for isCrudController (defined for supporting the unit test).
+   *
+   * @return isCrudController
+   */
+  def getIsCrudController: Boolean = isCrudController
 
-  logging.info(this, "Activity Tracker instantiated, isActive=" + isActive)
+  logging.info(
+    this,
+    "Activity Tracker instantiated for component=" + componentName +
+      ", isActive=" + isActive +
+      ", auditLogFilePath=" + auditLogFilePath +
+      ", auditLogFileNamePrefix=" + auditLogFileNamePrefix +
+      ", auditLogMaxFileSize=" + auditLogMaxFileSize)
 
   /**
    * Collects data from the request for the activity tracker. Data are stored in transid meta tags
@@ -222,7 +263,8 @@ class ActivityTracker(actorSystem: ActorSystem,
 
       if (!isIgnoredUser(initiatorName)) {
 
-        val serviceAction: ApiMatcherResult = getServiceAction(transid, httpMethod, uri, logging)
+        val serviceAction: ApiMatcherResult =
+          getServiceAction(transid, getIsCrudController, httpMethod, uri, logging)
 
         if (serviceAction != null) {
 

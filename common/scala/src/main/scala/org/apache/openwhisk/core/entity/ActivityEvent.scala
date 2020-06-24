@@ -266,11 +266,18 @@ trait ActivityUtils {
    * Returns the ApiMatcherResult (= actionType, logMessage, entityName) for the given uri and http method
    * if event should be logged. Returns null, otherwise.
    *
+   * @param transid transaction id
+   * @param isCrudController indicates whether the code is running as crudcontroller or controller
    * @param httpMethod http method of the request
    * @param uri uri of the request
+   * @param logger logger
    * @return instance of ApiMatcherResult, or null if event should not be logged
    */
-  def getServiceAction(transid: TransactionId, httpMethod: String, uri: String, logger: Logging): ApiMatcherResult = {
+  def getServiceAction(transid: TransactionId,
+                       isCrudController: Boolean,
+                       httpMethod: String,
+                       uri: String,
+                       logger: Logging): ApiMatcherResult = {
     val url = Try { new URL(uri) }.getOrElse(null)
     if (url == null) {
       logger.error(this, "audit.log - invalid or emtpy URL: " + uri)(id = transid)
@@ -281,13 +288,18 @@ trait ActivityUtils {
         null
       else {
         val method = if (httpMethod == null) "UNKNOWN" else httpMethod.toUpperCase
-        matchAPI("action", actionsAPIMatcher, method, urlPath) // actions API
-          .getOrElse(
-            matchAPI("package", packagesAPIMatcher, method, urlPath) // packages API
-              .getOrElse(
-                matchRulesAPI(transid, method, urlPath, logger) // rules API
-                  .getOrElse(matchAPI("trigger", triggersAPIMatcher, method, urlPath) // triggers API
-                    .getOrElse(matchOther(transid, method, urlPath, logger).orNull)))) // nothing to add to the log
+        if (isCrudController) // code is running as crudController
+          matchAPI(transid, "action", actionsAPIMatcher, method, urlPath) // actions API
+            .getOrElse(
+              matchAPI(transid, "package", packagesAPIMatcher, method, urlPath) // packages API
+                .getOrElse(
+                  matchRulesAPI(transid, method, urlPath, logger) // rules API
+                    .getOrElse(matchAPI(transid, "trigger", triggersAPIMatcher, method, urlPath) // triggers API
+                      .getOrElse(matchOther(transid, method, urlPath, logger).orNull)))) // nothing to add to the log
+        else // code is running  as controller (handles POST rule API call for enable/disable rule)
+          matchRulesAPI(transid, method, urlPath, logger) // rules API
+            .getOrElse(matchOther(transid, method, urlPath, logger).orNull) // nothing to add to the log
+
       }
     }
   }
@@ -371,13 +383,18 @@ trait ActivityUtils {
   /**
    * a matcher used for the APIs of actions, triggers and packages
    *
+   * @param transid transaction id
    * @param entityType action, trigger, package
-   * @param matcher actionsAPIMatcher, triggersAPIMatcher, triggersAPIMatcher
+   * @param matcher actionsAPIMatcher, packagesAPIMatcher, triggersAPIMatcher
    * @param method http method of the request
    * @param uri uri of the request
    * @return Some(ApiMatcherResult) or None
    */
-  def matchAPI(entityType: String, matcher: Regex, method: String, uri: String): Option[ApiMatcherResult] = {
+  def matchAPI(transid: TransactionId,
+               entityType: String,
+               matcher: Regex,
+               method: String,
+               uri: String): Option[ApiMatcherResult] = {
     // ignored: invoke action, list all actions
     val entityTypePathSelector = entityType + "s" // plural of entityType
     val targetType = thisService + "/" + entityType
@@ -390,16 +407,18 @@ trait ActivityUtils {
           case "GET" =>
             Some(
               ApiMatcherResult(
-                actionTypePrefix + ".get",
-                messagePrefix + "get " + entityType + " " + targetName,
+                actionTypePrefix + ".read",
+                messagePrefix + "read " + entityType + " " + targetName,
                 targetName,
                 targetType,
                 isDataEvent = true))
           case "PUT" =>
+            val isUpdate = !transid.getTag(TransactionId.tagUpdateInfo).isEmpty
+            val operation = if (isUpdate) "update" else "create"
             Some(
               ApiMatcherResult(
-                actionTypePrefix + ".create",
-                messagePrefix + "create " + entityType + " " + targetName,
+                actionTypePrefix + "." + operation,
+                messagePrefix + operation + " " + entityType + " " + targetName,
                 targetName,
                 targetType,
                 isDataEvent = false))
@@ -436,16 +455,18 @@ trait ActivityUtils {
           case "GET" =>
             Some(
               ApiMatcherResult(
-                thisService + ".rule.get",
-                messagePrefix + "get rule " + ruleName,
+                thisService + ".rule.read",
+                messagePrefix + "read rule " + ruleName,
                 ruleName,
                 targetType,
                 isDataEvent = true))
           case "PUT" =>
+            val isUpdate = !transid.getTag(TransactionId.tagUpdateInfo).isEmpty
+            val operation = if (isUpdate) "update" else "create"
             Some(
               ApiMatcherResult(
-                thisService + ".rule.create",
-                messagePrefix + "create rule " + ruleName,
+                thisService + ".rule." + operation,
+                messagePrefix + operation + " rule " + ruleName,
                 ruleName,
                 targetType,
                 isDataEvent = false))
@@ -483,8 +504,7 @@ trait ActivityUtils {
             }
           case _ => None
         }
-      case _ =>
-        None
+      case _ => None
     }
   }
 
