@@ -23,6 +23,7 @@ import org.scalatest.Matchers
 import org.scalatest.concurrent.IntegrationPatience
 import org.scalatest.concurrent.ScalaFutures
 import akka.actor.ActorSystem
+import akka.http.scaladsl.model.StatusCodes
 import common.WaitFor
 import common.WhiskProperties
 import pureconfig._
@@ -58,11 +59,21 @@ trait DatabaseScriptTestUtils extends ScalaFutures with Matchers with WaitFor wi
   /** Creates a new database with the given name */
   def createDatabase(name: String, designDocPath: Option[String])(implicit as: ActorSystem, logging: Logging) = {
     // Implicitly remove database for sanitization purposes
-    removeDatabase(name, ignoreFailure = true)
+    removeDatabase(name)
 
     println(s"Creating database: $name")
     val db = new ExtendedCouchDbRestClient(dbProtocol, dbHost, dbPort, dbUsername, dbPassword, name)
-    retry(db.createDb().futureValue shouldBe 'right)
+    retry {
+      val create = db.createDb().futureValue
+      // check in case of failure (left) if database already exists
+      if (create.isLeft) {
+        println(s"Creating database: $name returned left: $create")
+        create.left.map(statusCode => {
+          statusCode.intValue() shouldBe StatusCodes.PreconditionFailed.intValue
+          statusCode.reason should include("The database could not be created, the file already exists")
+        })
+      }
+    }
 
     retry {
       val list = db.dbs().futureValue.right.get
@@ -92,7 +103,15 @@ trait DatabaseScriptTestUtils extends ScalaFutures with Matchers with WaitFor wi
     val db = new ExtendedCouchDbRestClient(dbProtocol, dbHost, dbPort, dbUsername, dbPassword, name)
     retry {
       val delete = db.deleteDb().futureValue
-      if (!ignoreFailure) delete shouldBe 'right
+      if (!ignoreFailure)
+        // check in case of failure (left) if database is already deleted
+        if (delete.isLeft) {
+          println(s"Removing database: $name returned left: $delete")
+          delete.left.map(statusCode => {
+            statusCode.intValue() shouldBe StatusCodes.NotFound.intValue
+            statusCode.reason should include("Database does not exist")
+          })
+        }
     }
     // make sure database is deleted
     retry {
