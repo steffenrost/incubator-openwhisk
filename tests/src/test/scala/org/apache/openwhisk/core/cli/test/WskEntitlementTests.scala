@@ -17,31 +17,52 @@
 
 package org.apache.openwhisk.core.cli.test
 
+import akka.stream.ActorMaterializer
 import org.junit.runner.RunWith
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.junit.JUnitRunner
-
-import common.TestHelpers
-import common.TestUtils
+import common.{
+  StreamLogging,
+  TestHelpers,
+  TestUtils,
+  WhiskProperties,
+  WskActorSystem,
+  WskOperations,
+  WskProps,
+  WskTestHelpers
+}
 import common.TestUtils.RunResult
-import common.WskOperations
-import common.WskProps
-import common.WskTestHelpers
+import org.apache.openwhisk.core.database.test.{DbUtils, ExtendedCouchDbRestClient}
 import spray.json._
 import spray.json.DefaultJsonProtocol._
 import org.apache.openwhisk.core.entity.Subject
 import org.apache.openwhisk.core.entity.WhiskPackage
+
 import scala.concurrent.duration._
-
 @RunWith(classOf[JUnitRunner])
-abstract class WskEntitlementTests extends TestHelpers with WskTestHelpers with BeforeAndAfterAll {
+abstract class WskEntitlementTests()
+    extends TestHelpers
+    with WskActorSystem
+    with DbUtils
+    with StreamLogging
+    with WskTestHelpers
+    with BeforeAndAfterAll {
 
+  private implicit val materializer = ActorMaterializer()
   val wsk: WskOperations
   lazy val defaultWskProps = WskProps()
   lazy val guestWskProps = getAdditionalTestSubject(Subject().asString)
   val forbiddenCode: Int
   val timeoutCode: Int
   val notFoundCode: Int
+
+  val subjectsDbClient = new ExtendedCouchDbRestClient(
+    protocol = WhiskProperties.getProperty("db.protocol"),
+    host = WhiskProperties.getProperty("db.host"),
+    port = WhiskProperties.getProperty("db.port").toInt,
+    username = WhiskProperties.getProperty("db.username"),
+    password = WhiskProperties.getProperty("db.password"),
+    db = WhiskProperties.getProperty("db.whisk.auths"))
 
   override def afterAll() = {
     disposeAdditionalTestSubject(guestWskProps.namespace)
@@ -53,6 +74,57 @@ abstract class WskEntitlementTests extends TestHelpers with WskTestHelpers with 
   val sampleAction = "sampleAction"
   val fullSampleActionName = s"$samplePackage/$sampleAction"
   val guestNamespace = guestWskProps.namespace
+  println(s"guestWskProps: $guestWskProps, guestNamespace: $guestNamespace, authKey: ${guestWskProps.authKey}")
+
+  private def waitForEntriesToAppear(db: ExtendedCouchDbRestClient, authKey: String, expectedCount: Int): Unit = {
+    // query identities view by using authkey, if in view result will be as follows:
+    // {
+    //  "offset": 45,
+    //  "rows": [
+    //    {
+    //      "id": "anon-sdFOhq4kiknbYM33deFb7SSJ9vA",
+    //      "key": [
+    //        "58b9a982-e9ab-4010-8dc9-87650a123bc1",
+    //        "iX8***fb16"
+    //      ],
+    //      "value": {
+    //        "_id": "anon-sdFOhq4kiknbYM33deFb7SSJ9vA/limits",
+    //        "key": "iX8***b16",
+    //        "namespace": "anon-sdFOhq4kiknbYM33deFb7SSJ9vA",
+    //        "uuid": "58b9a982-e9ab-4010-8dc9-87650a123bc1"
+    //      }
+    //    }
+    //  ],
+    //  "total_rows": 296
+    //}
+    val key = List(authKey.split(":")(0), authKey.split(":")(1))
+
+    def checkForEntriesToAppearInView() =
+      db.executeView("subjects.v2.0.0", "identities")(key, key, reduce = false).map {
+        case Right(doc) =>
+          val rows = doc
+            .fields("rows")
+            .convertTo[List[JsObject]]
+          if (rows.length != expectedCount) {
+            println(s"view rows length: ${rows.length} (doc: $doc), expected: $expectedCount")
+            throw RetryOp()
+          }
+          true
+        case Left(statusCode) =>
+          println(s"unexpected left value: $statusCode")
+          throw RetryOp()
+      }
+
+    // query the view at least `successfulViewCalls` times successfully, to handle inconsistency between several CouchDB-nodes.
+    (0 until successfulViewCalls).map { _ =>
+      // try for 5 minutes
+      val success =
+        retry(() => checkForEntriesToAppearInView, timeout = 10.seconds, count = 90, graceBeforeRetry = 2.seconds)
+      assert(success.isSuccess, "wait for entries to appear in view not successful after 90 retries: " + success)
+    }
+  }
+  val viewEntriesResult = waitForEntriesToAppear(subjectsDbClient, guestWskProps.authKey, 1)
+  println(s"viewEntriesResult: $viewEntriesResult")
 
   behavior of "Wsk Package Entitlement"
 
