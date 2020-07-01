@@ -91,6 +91,54 @@ trait DbUtils extends Assertions {
     } else Failure(new NoDocumentException("timed out"))
   }
 
+  def waitForIdentityToAppear(db: ExtendedCouchDbRestClient, authKey: String, expectedCount: Int): Unit = {
+    // query identities view by using authkey, if in view result will be as follows:
+    // {
+    //  "offset": 45,
+    //  "rows": [
+    //    {
+    //      "id": "anon-sdFOhq4kiknbYM33deFb7SSJ9vA",
+    //      "key": [
+    //        "58b9a982-e9ab-4010-8dc9-87650a123bc1",
+    //        "iX8***fb16"
+    //      ],
+    //      "value": {
+    //        "_id": "anon-sdFOhq4kiknbYM33deFb7SSJ9vA/limits",
+    //        "key": "iX8***b16",
+    //        "namespace": "anon-sdFOhq4kiknbYM33deFb7SSJ9vA",
+    //        "uuid": "58b9a982-e9ab-4010-8dc9-87650a123bc1"
+    //      }
+    //    }
+    //  ],
+    //  "total_rows": 296
+    //}
+    val key = List(authKey.split(":")(0), authKey.split(":")(1))
+
+    def checkForIdentityToAppearInView() =
+      db.executeView("subjects.v2.0.0", "identities")(key, key, reduce = false).map {
+        case Right(doc) =>
+          val rows = doc
+            .fields("rows")
+            .convertTo[List[JsObject]]
+          if (rows.length != expectedCount) {
+            println(s"view rows length: ${rows.length} (doc: $doc), expected: $expectedCount")
+            throw RetryOp()
+          }
+          true
+        case Left(statusCode) =>
+          println(s"unexpected left value: $statusCode")
+          throw RetryOp()
+      }
+
+    // query the view at least `successfulViewCalls` times successfully, to handle inconsistency between several CouchDB-nodes.
+    (0 until successfulViewCalls).map { _ =>
+      // try for 5 minutes
+      val success =
+        retry(() => checkForIdentityToAppearInView, timeout = 10.seconds, count = 90, graceBeforeRetry = 2.seconds)
+      assert(success.isSuccess, "wait for entries to appear in view not successful after 90 retries: " + success)
+    }
+  }
+
   /**
    * Wait on a view to update with documents added to namespace. This uses retry above,
    * where the step performs a direct db query to retrieve the view and check the count
