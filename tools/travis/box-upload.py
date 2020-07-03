@@ -84,6 +84,13 @@ if __name__ == "__main__":
     print("cat /home/travis/build/ibm-functions/openwhisk/logs/apigateway.log..")
     subprocess.call(["cat", "/home/travis/build/ibm-functions/openwhisk/logs/apigateway.log"])
 
+    print("cat /home/travis/build/ibm-functions/openwhisk/logs/nginx.log..")
+    subprocess.call(["cat", "/home/travis/build/ibm-functions/openwhisk/logs/nginx.log"])
+
+    print("cat /home/travis/build/ibm-functions/openwhisk/logs/nginx/nginx_access.log..")
+    subprocess.call(["cat", "/home/travis/build/ibm-functions/openwhisk/logs/nginx/nginx_access.log"])
+
+
     print("Compressing logs dir...")
     tar = tar_gz_dir(dir_path)
     print_tarball_size(tar)
