@@ -278,7 +278,7 @@ apigateway:
     api: 9000
     mgmt: 9001
   # Default to 'nightly', which tracks the head revision of the master branch of apigateway's gitrepo
-  version: 0.9.10
+  version: nightly
 
 redis:
   version: 4.0
