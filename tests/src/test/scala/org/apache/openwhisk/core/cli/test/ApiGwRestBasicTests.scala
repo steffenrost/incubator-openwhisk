@@ -29,6 +29,7 @@ import common.TestUtils
 
 import scala.util.matching.Regex
 import common.WskProps
+
 import scala.concurrent.duration.DurationInt
 
 /**
@@ -937,8 +938,11 @@ abstract class ApiGwRestBasicTests extends BaseApiGwTests {
             rr = apiGet(basepathOrApiName = Some(testapiname))
             verifyApiList(rr, clinamespace, testName + "_action", testurlop, testbasepath, testrelpath, testapiname)
           } finally {
-            wsk.action.delete(name = actionName, expectedExitCode = DONTCARE_EXIT)
+            wsk.action.delete(name = actionName)
             apiDelete(basepathOrApiName = testbasepath, expectedExitCode = DONTCARE_EXIT)
+            org.apache.openwhisk.utils.retry({
+              wsk.action.get(name = actionName, expectedExitCode = 404)
+            }, retriesOnTestFailures, Some(waitBeforeRetry), Some(s"${this.getClass.getName} action ${actionName} not yet deleted, retrying.."))
             wsk.pkg.delete(packageName).stdout should include regex (s""""name":\\s*"$packageName"""")
           }
         },
