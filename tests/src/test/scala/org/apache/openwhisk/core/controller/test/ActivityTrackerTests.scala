@@ -25,7 +25,7 @@ import scala.util.Try
 import org.junit.runner.RunWith
 import org.scalatest.{BeforeAndAfterEach, FlatSpecLike, Matchers}
 import org.scalatestplus.junit.JUnitRunner
-import akka.http.scaladsl.model.{HttpResponse, StatusCodes}
+import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpResponse, StatusCodes}
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
 import spray.json._
@@ -177,7 +177,7 @@ class ActivityTrackerTests()
 
       // expected format: YYY-MM-DDTHH:mm:ss.SS+0000, e.g. "2019-11-03T21:40:53.94+0000" (at least 2 digits for millis)
       val timestamp = resultFields("eventTime").convertTo[String]
-      val ok = timestamp.matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{2,}+\\+0{4}")
+      val ok = timestamp.matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{2}\\+0{4}")
       "ok" shouldBe (if (ok) "ok" else "timestamp " + timestamp + " does not match YYYY-MM-DDTHH:mm:ss.SS+0000")
     }
   }
@@ -187,15 +187,16 @@ class ActivityTrackerTests()
     targetId: String =
       "crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a:a88c0a24-853b-4477-82f8-6876e72bebf2::",
     logSourceCRN: String = "crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a:::",
-    accountInResourceGroupId: String = "a/eb2e36585c91a27a709c44e2652a381a",
-    dataEvent: Boolean = false) =
+    accountInResourceGroupId: String = "a/eb2e36585c91a27a709c44e2652a381a") =
     s"""
 {"requestData":{
+    "requestId":"test_get_activation",
+    "ruleName" :"testrule",
     "method":"GET",
     "url":"https://fn-dev-pg4.us-south.containers.appdomain.cloud/api/v1/namespaces/_/rules/testrule",
-    "userAgent":"CloudFunctions-Plugin/1.0 (2020-03-27T16:04:13+00:00) darwin amd64",
-    "resourceGroupId":"crn:v1:bluemix:public:resource-controller:global:$accountInResourceGroupId::resource-group:ca23a1a3f0a84e2ab6b70c22ec6b1324"
+    "userAgent":"CloudFunctions-Plugin/1.0 (2020-03-27T16:04:13+00:00) darwin amd64"
  },
+ "resourceGroupId":"crn:v1:bluemix:public:resource-controller:global:$accountInResourceGroupId::resource-group:ca23a1a3f0a84e2ab6b70c22ec6b1324",
  "observer":{"name":"ActivityTracker"},
  "outcome":"success",
  "saveServiceCopy":true,
@@ -203,31 +204,34 @@ class ActivityTrackerTests()
      "reasonCode":200,
      "reasonType":"OK"
  },
- "id":"#tid_test_get_activation",
  "eventTime":"2020-06-04T15:02:20.663+0000",
- "message":"IBM Cloud Functions: read rule testrule for namespace a88c0a24-853b-4477-82f8-6876e72bebf2",
+ "message":"Functions: read rule testrule for namespace a88c0a24-853b-4477-82f8-6876e72bebf2",
  "target":{
      "id":"$targetId",
-     "name":"testrule","typeURI":"functions/rule"
+     "name":"",
+     "typeURI":"functions/namespace/rule"
  },
- "severity":"warning",
+ "severity":"normal",
  "logSourceCRN":"$logSourceCRN",
  "action":"functions.rule.read",
  "initiator":{
     "name":"john.doe@acme.com",
-    "host":{"address":"192.168.0.1"},
+    "host":{"address":"192.168.0.1","addressType":"IPv4"},
     "id":"IBMid-310000GN7M",
     "typeURI":"service/security/account/user",
     "credential":{"type":"$credType"}
  },
- "dataEvent":$dataEvent,
+ "dataEvent":true,
  "responseData":{}
 }
 """
 
   // crudcontroller tests (getIsCrudController = true)
 
-  it should "handle unsuccessful create action correctly (crudcontroller)" in {
+  it should "handle unsuccessful create action correctly, check reasonCode adjustment, reasonForFailure (crudcontroller)" in {
+
+    // adjustment: severity should be adjusted from normal to warning
+    // test reasonForFailure with a response containing an error entitiy
 
     var eventString: String = null
 
@@ -252,6 +256,7 @@ class ActivityTrackerTests()
         TransactionId.tagTargetId,
         "crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a:a88c0a24-853b-4477-82f8-6876e72bebf2::"),
       (TransactionId.tagTargetIdEncoded, ""), // only filled for BasicAuth (in this case tagTargetId is empty)
+      (TransactionId.tagUpdateInfo, ""),
       (
         TransactionId.tagUri,
         "https://fn-dev-pg4.us-south.containers.appdomain.cloud/api/v1/namespaces/_/actions/hello123?overwrite=false"),
@@ -261,35 +266,41 @@ class ActivityTrackerTests()
     for (setting <- settings) transid.setTag(setting._1, setting._2)
 
     eventString = null
-    Await.result(activityTracker.responseHandlerAsync(transid, HttpResponse(StatusCodes.Conflict)), waitTime)
+
+    val resp = HttpResponse(
+      status = StatusCodes.Conflict,
+      entity = HttpEntity(ContentTypes.`application/json`, """{"id": "id", "error": "error message"}"""))
+
+    Await.result(activityTracker.responseHandlerAsync(transid, resp), waitTime)
 
     // in case of errors following additional settings hold:
-    // - requestData.reasonForFailure must be filled
+    // - reason.reasonForFailure must be filled
     // - message must contain "-failure"
     // - outcome is "failure"
     val expectedString =
       """
 {"requestData":{
+    "actionName":"hello123",
+    "requestId":"test_create_action_err",
     "url":"https://fn-dev-pg4.us-south.containers.appdomain.cloud/api/v1/namespaces/_/actions/hello123?overwrite=false",
     "userAgent":"CloudFunctions-Plugin/1.0 (2020-03-27T16:04:13+00:00) darwin amd64",
-    "reasonForFailure":"Conflict",
-    "resourceGroupId":"crn:v1:bluemix:public:resource-controller:global:a/eb2e36585c91a27a709c44e2652a381a::resource-group:ca23a1a3f0a84e2ab6b70c22ec6b1324",
     "method":"PUT"
  },
+ "resourceGroupId":"crn:v1:bluemix:public:resource-controller:global:a/eb2e36585c91a27a709c44e2652a381a::resource-group:ca23a1a3f0a84e2ab6b70c22ec6b1324",
  "observer":{"name":"ActivityTracker"},
  "outcome":"failure",
  "saveServiceCopy":true,
  "reason":{
      "reasonCode":409,
-     "reasonType":"Conflict"
+     "reasonType":"Conflict",
+     "reasonForFailure":"error message"
  },
- "id":"#tid_test_create_action_err",
  "eventTime":"2020-06-02T18:42:55.149+0000",
- "message":"IBM Cloud Functions: create action hello123 for namespace a88c0a24-853b-4477-82f8-6876e72bebf2 -failure",
+ "message":"Functions: create action hello123 for namespace a88c0a24-853b-4477-82f8-6876e72bebf2 -failure",
  "target":{
      "id":"crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a:a88c0a24-853b-4477-82f8-6876e72bebf2::",
-     "name":"hello123",
-     "typeURI":"functions/action"
+     "name":"",
+     "typeURI":"functions/namespace/action"
  },
  "severity":"warning",
  "logSourceCRN":"crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a:::",
@@ -297,7 +308,8 @@ class ActivityTrackerTests()
  "initiator":{
      "name":"john.doe@acme.com",
      "host":{
-         "address":"192.168.0.1"
+         "address":"192.168.0.1",
+         "addressType":"IPv4"
       },
       "id":"IBMid-310000GN7M",
       "typeURI":"service/security/account/user",
@@ -305,7 +317,7 @@ class ActivityTrackerTests()
           "type":"apikey"
       }
  },
- "dataEvent":false,
+ "dataEvent":true,
  "responseData":{}
 }
 """
@@ -338,6 +350,7 @@ class ActivityTrackerTests()
       (
         TransactionId.tagTargetIdEncoded,
         "Y3JuOnYxOmJsdWVtaXg6cHVibGljOmZ1bmN0aW9uczp1cy1zb3V0aDphL2ViMmUzNjU4NWM5MWEyN2E3MDljNDRlMjY1MmEzODFhOnMtM2M5ZjJlZDgtNjQzNi00Mjg4LTkzYWQtMTgxNWI3ZWExMGE2Ojo="),
+      (TransactionId.tagUpdateInfo, ""),
       (
         TransactionId.tagUri,
         "https://fn-dev-pg4.us-south.containers.appdomain.cloud/api/v1/namespaces/_/actions/helloClassic1?overwrite=false"),
@@ -352,11 +365,13 @@ class ActivityTrackerTests()
     val expectedString =
       """
 {"requestData":{
+    "actionName":"helloClassic1",
+    "requestId":"test_create_action_classic",
     "method":"PUT",
     "url":"https://fn-dev-pg4.us-south.containers.appdomain.cloud/api/v1/namespaces/_/actions/helloClassic1?overwrite=false",
-    "resourceGroupId":"",
     "userAgent":"CloudFunctions-Plugin/1.0 (2020-03-27T16:04:13+00:00) darwin amd64"
  },
+ "resourceGroupId":"",
  "observer":{
      "name":"ActivityTracker"
  },
@@ -366,21 +381,21 @@ class ActivityTrackerTests()
      "reasonCode":200,
      "reasonType":"OK"
  },
- "id":"#tid_test_create_action_classic",
  "eventTime":"2020-06-03T00:47:51.818+0000",
- "message":"IBM Cloud Functions: create action helloClassic1 for namespace s-3c9f2ed8-6436-4288-93ad-1815b7ea10a6",
+ "message":"Functions: create action helloClassic1 for namespace s-3c9f2ed8-6436-4288-93ad-1815b7ea10a6",
  "target":{
      "id":"crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a:s-3c9f2ed8-6436-4288-93ad-1815b7ea10a6::",
-     "name":"helloClassic1",
-     "typeURI":"functions/action"
+     "name":"",
+     "typeURI":"functions/namespace/action"
  },
- "severity":"warning",
+ "severity":"normal",
  "logSourceCRN":"crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a:::",
  "action":"functions.action.create",
  "initiator":{
      "name":"john.doe@acme.com",
      "host":{
-         "address":"192.168.0.1"
+         "address":"192.168.0.1",
+         "addressType":"IPv4"
      },
      "id":"john.doe@acme.com",
      "typeURI":"service/security/account/user",
@@ -388,7 +403,7 @@ class ActivityTrackerTests()
          "type":"user"
      }
  },
- "dataEvent":false,
+ "dataEvent":true,
  "responseData":{}
 }
 """
@@ -530,7 +545,7 @@ class ActivityTrackerTests()
     // sequences indexed by methodIndex
     val method = Seq("PUT", "GET", "DELETE", "PUT")
     val operation = Seq("create", "read", "delete", "update")
-    val dataEvent = Seq(false, true, false, false)
+    val severity = Seq("normal", "normal", "critical", "warning")
     val actionType = operation
 
     val reasonCode = 200 // // always 200
@@ -571,11 +586,13 @@ class ActivityTrackerTests()
         val expectedString =
           s"""
 {"requestData":{
+    "requestId":"test_api",
+    "${entityType}Name": "$entityName",
     "method":"${method(methodIndex)}",
     "url":"$url",
-    "userAgent":"CloudFunctions-Plugin/1.0 (2020-03-27T16:04:13+00:00) darwin amd64",
-    "resourceGroupId":"crn:v1:bluemix:public:resource-controller:global:a/eb2e36585c91a27a709c44e2652a381a::resource-group:ca23a1a3f0a84e2ab6b70c22ec6b1324"
+    "userAgent":"CloudFunctions-Plugin/1.0 (2020-03-27T16:04:13+00:00) darwin amd64"
  },
+ "resourceGroupId":"crn:v1:bluemix:public:resource-controller:global:a/eb2e36585c91a27a709c44e2652a381a::resource-group:ca23a1a3f0a84e2ab6b70c22ec6b1324",
  "observer":{
     "name":"ActivityTracker"
  },
@@ -585,21 +602,21 @@ class ActivityTrackerTests()
      "reasonCode":$reasonCode,
      "reasonType":"$reasonType"
  },
- "id":"#tid_test_api",
  "eventTime":"2020-06-03T14:38:10.258+0000",
- "message":"IBM Cloud Functions: ${operation(methodIndex)} $entityType $entityName for namespace a88c0a24-853b-4477-82f8-6876e72bebf2",
+ "message":"Functions: ${operation(methodIndex)} $entityType $entityName for namespace a88c0a24-853b-4477-82f8-6876e72bebf2",
  "target":{
      "id":"crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a::a88c0a24-853b-4477-82f8-6876e72bebf2::",
-     "name":"$entityName",
-     "typeURI":"functions/$entityType"
+     "name":"",
+     "typeURI":"functions/namespace/$entityType"
  },
- "severity":"warning",
+ "severity":"${severity(methodIndex)}",
  "logSourceCRN":"crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a:::",
  "action":"functions.$entityType.${actionType(methodIndex)}",
  "initiator":{
      "name":"john.doe@acme.com",
      "host":{
-         "address":"192.168.0.1"
+         "address":"192.168.0.1",
+         "addressType":"IPv4"
      },
      "id":"IBMid-310000GN7M",
      "typeURI":"service/security/account/user",
@@ -607,7 +624,7 @@ class ActivityTrackerTests()
          "type":"apikey"
      }
  },
- "dataEvent":${dataEvent(methodIndex)},
+ "dataEvent":true,
  "responseData":{}
 }
 """
@@ -697,7 +714,7 @@ class ActivityTrackerTests()
     eventString = null
     Await.result(activityTracker.responseHandlerAsync(transid, HttpResponse(StatusCodes.OK)), waitTime)
 
-    val expectedString = getExpectedResultForInvalidValuesTests(credType = "unknown", dataEvent = true)
+    val expectedString = getExpectedResultForInvalidValuesTests(credType = "unknown")
     verifyEvent(eventString, expectedString)
   }
 
@@ -777,8 +794,7 @@ class ActivityTrackerTests()
       getExpectedResultForInvalidValuesTests(
         targetId = "INVALID",
         logSourceCRN = "INVALID",
-        accountInResourceGroupId = "unknown",
-        dataEvent = true)
+        accountInResourceGroupId = "unknown")
 
     verifyEvent(eventString, expectedString)
   }
@@ -819,11 +835,7 @@ class ActivityTrackerTests()
 
     // "NOTBASE64" cannot be decoded via base64 therefore both targetid and logSourceCRN are empty
     val expectedString =
-      getExpectedResultForInvalidValuesTests(
-        targetId = "",
-        logSourceCRN = "",
-        accountInResourceGroupId = "unknown",
-        dataEvent = true)
+      getExpectedResultForInvalidValuesTests(targetId = "", logSourceCRN = "", accountInResourceGroupId = "unknown")
 
     verifyEvent(eventString, expectedString)
   }
@@ -912,6 +924,7 @@ class ActivityTrackerTests()
               TransactionId.tagTargetId,
               "crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a::a88c0a24-853b-4477-82f8-6876e72bebf2::"),
             (TransactionId.tagTargetIdEncoded, ""), // only filled for BasicAuth (in this case tagTargetId is empty)
+            (TransactionId.tagUpdateInfo, ""),
             (TransactionId.tagUri, url),
             (TransactionId.tagUserAgent, "CloudFunctions-Plugin/1.0 (2020-03-27T16:04:13+00:00) darwin amd64"))
 
@@ -921,11 +934,13 @@ class ActivityTrackerTests()
           val expectedString =
             s"""
 {"requestData":{
+    "${entityType}Name":"$entityName",
+    "requestId":"test_api",
     "method":"${method(methodIndex)}",
     "url":"$url",
-    "userAgent":"CloudFunctions-Plugin/1.0 (2020-03-27T16:04:13+00:00) darwin amd64",
-    "resourceGroupId":"crn:v1:bluemix:public:resource-controller:global:a/eb2e36585c91a27a709c44e2652a381a::resource-group:ca23a1a3f0a84e2ab6b70c22ec6b1324"
+    "userAgent":"CloudFunctions-Plugin/1.0 (2020-03-27T16:04:13+00:00) darwin amd64"
  },
+ "resourceGroupId":"crn:v1:bluemix:public:resource-controller:global:a/eb2e36585c91a27a709c44e2652a381a::resource-group:ca23a1a3f0a84e2ab6b70c22ec6b1324",
  "observer":{
     "name":"ActivityTracker"
  },
@@ -935,21 +950,21 @@ class ActivityTrackerTests()
      "reasonCode":$reasonCode,
      "reasonType":"$reasonType"
  },
- "id":"#tid_test_api",
  "eventTime":"2020-06-03T14:38:10.258+0000",
- "message":"IBM Cloud Functions: ${operation(methodIndex)} $entityType $entityName for namespace a88c0a24-853b-4477-82f8-6876e72bebf2",
+ "message":"Functions: ${operation(methodIndex)} $entityType $entityName for namespace a88c0a24-853b-4477-82f8-6876e72bebf2",
  "target":{
      "id":"crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a::a88c0a24-853b-4477-82f8-6876e72bebf2::",
-     "name":"$entityName",
-     "typeURI":"functions/$entityType"
+     "name":"",
+     "typeURI":"functions/namespace/$entityType"
  },
- "severity":"warning",
+ "severity":"normal",
  "logSourceCRN":"crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a:::",
  "action":"functions.$entityType.${actionType(methodIndex)}",
  "initiator":{
      "name":"john.doe@acme.com",
      "host":{
-         "address":"192.168.0.1"
+         "address":"192.168.0.1",
+         "addressType":"IPv4"
      },
      "id":"IBMid-310000GN7M",
      "typeURI":"service/security/account/user",
@@ -957,7 +972,7 @@ class ActivityTrackerTests()
          "type":"apikey"
      }
  },
- "dataEvent":false,
+ "dataEvent":true,
  "responseData":{}
 }
 """
@@ -973,7 +988,7 @@ class ActivityTrackerTests()
   // controller tests (getIsCrudController = false)
   // only http POST is tested since all requests with PUT, GET, DELETE are directed to crudcontroller
 
-  it should "handle successful (enable, disable) rule correctly (controller)" in {
+  it should "handle successful (enable, disable) rule correctly, also check IPv6 address (controller)" in {
 
     var eventString: String = null
 
@@ -996,41 +1011,41 @@ class ActivityTrackerTests()
       val entityName = "hello123"
       val method = "POST"
 
-      for (entityType <- 0 to 1) {
+      val url =
+        s"https://fn-dev-pg4.us-south.containers.appdomain.cloud/api/v1/namespaces/_/rules/$entityName"
 
-        val url =
-          s"https://fn-dev-pg4.us-south.containers.appdomain.cloud/api/v1/namespaces/_/rules/$entityName"
+      val settings = Seq(
+        (TransactionId.tagGrantType, "urn:ibm:params:oauth:grant-type:apikey"),
+        (TransactionId.tagHttpMethod, method),
+        (TransactionId.tagInitiatorId, "IBMid-310000GN7M"),
+        (TransactionId.tagInitiatorIp, "2001:0db8:85a3:0000:0000:8a2e:0370:7334"),
+        (TransactionId.tagInitiatorName, "john.doe@acme.com"),
+        (TransactionId.tagNamespaceId, "a88c0a24-853b-4477-82f8-6876e72bebf2"),
+        (TransactionId.tagRequestedStatus, requestedStatus(operationIndex)), // only filled for rules
+        (TransactionId.tagResourceGroupId, "ca23a1a3f0a84e2ab6b70c22ec6b1324"),
+        (
+          TransactionId.tagTargetId,
+          "crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a::a88c0a24-853b-4477-82f8-6876e72bebf2::"),
+        (TransactionId.tagTargetIdEncoded, ""), // only filled for BasicAuth (in this case tagTargetId is empty)
+        (TransactionId.tagUri, url),
+        (TransactionId.tagUserAgent, "CloudFunctions-Plugin/1.0 (2020-03-27T16:04:13+00:00) darwin amd64"))
 
-        val settings = Seq(
-          (TransactionId.tagGrantType, "urn:ibm:params:oauth:grant-type:apikey"),
-          (TransactionId.tagHttpMethod, method),
-          (TransactionId.tagInitiatorId, "IBMid-310000GN7M"),
-          (TransactionId.tagInitiatorIp, "192.168.0.1"),
-          (TransactionId.tagInitiatorName, "john.doe@acme.com"),
-          (TransactionId.tagNamespaceId, "a88c0a24-853b-4477-82f8-6876e72bebf2"),
-          (TransactionId.tagRequestedStatus, requestedStatus(operationIndex)), // only filled for rules
-          (TransactionId.tagResourceGroupId, "ca23a1a3f0a84e2ab6b70c22ec6b1324"),
-          (
-            TransactionId.tagTargetId,
-            "crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a::a88c0a24-853b-4477-82f8-6876e72bebf2::"),
-          (TransactionId.tagTargetIdEncoded, ""), // only filled for BasicAuth (in this case tagTargetId is empty)
-          (TransactionId.tagUri, url),
-          (TransactionId.tagUserAgent, "CloudFunctions-Plugin/1.0 (2020-03-27T16:04:13+00:00) darwin amd64"))
+      val transid = TransactionId("test_api")
+      for (setting <- settings) transid.setTag(setting._1, setting._2)
 
-        val transid = TransactionId("test_api")
-        for (setting <- settings) transid.setTag(setting._1, setting._2)
+      eventString = null
+      Await.result(activityTracker.responseHandlerAsync(transid, HttpResponse(StatusCodes.OK)), waitTime)
 
-        eventString = null
-        Await.result(activityTracker.responseHandlerAsync(transid, HttpResponse(StatusCodes.OK)), waitTime)
-
-        val expectedString =
-          s"""
+      val expectedString =
+        s"""
 {"requestData":{
+    "ruleName":"$entityName",
+    "requestId":"test_api",
     "method":"$method",
     "url":"$url",
-    "userAgent":"CloudFunctions-Plugin/1.0 (2020-03-27T16:04:13+00:00) darwin amd64",
-    "resourceGroupId":"crn:v1:bluemix:public:resource-controller:global:a/eb2e36585c91a27a709c44e2652a381a::resource-group:ca23a1a3f0a84e2ab6b70c22ec6b1324"
+    "userAgent":"CloudFunctions-Plugin/1.0 (2020-03-27T16:04:13+00:00) darwin amd64"
  },
+ "resourceGroupId":"crn:v1:bluemix:public:resource-controller:global:a/eb2e36585c91a27a709c44e2652a381a::resource-group:ca23a1a3f0a84e2ab6b70c22ec6b1324",
  "observer":{
     "name":"ActivityTracker"
  },
@@ -1040,13 +1055,12 @@ class ActivityTrackerTests()
      "reasonCode":$reasonCode,
      "reasonType":"$reasonType"
  },
- "id":"#tid_test_api",
  "eventTime":"2020-06-03T14:38:10.258+0000",
- "message":"IBM Cloud Functions: ${actionType(operationIndex)} rule $entityName for namespace a88c0a24-853b-4477-82f8-6876e72bebf2",
+ "message":"Functions: ${actionType(operationIndex)} rule $entityName for namespace a88c0a24-853b-4477-82f8-6876e72bebf2",
  "target":{
      "id":"crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a::a88c0a24-853b-4477-82f8-6876e72bebf2::",
-     "name":"$entityName",
-     "typeURI":"functions/rule"
+     "name":"",
+     "typeURI":"functions/namespace/rule"
  },
  "severity":"warning",
  "logSourceCRN":"crn:v1:bluemix:public:functions:us-south:a/eb2e36585c91a27a709c44e2652a381a:::",
@@ -1054,7 +1068,8 @@ class ActivityTrackerTests()
  "initiator":{
      "name":"john.doe@acme.com",
      "host":{
-         "address":"192.168.0.1"
+         "address":"2001:0db8:85a3:0000:0000:8a2e:0370:7334",
+         "addressType":"IPv6"
      },
      "id":"IBMid-310000GN7M",
      "typeURI":"service/security/account/user",
@@ -1062,12 +1077,11 @@ class ActivityTrackerTests()
          "type":"apikey"
      }
  },
- "dataEvent":false,
+ "dataEvent":true,
  "responseData":{}
 }
 """
-        verifyEvent(eventString, expectedString)
-      }
+      verifyEvent(eventString, expectedString)
     }
   }
 
