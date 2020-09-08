@@ -275,3 +275,30 @@ object ErrorResponse extends Directives with DefaultJsonProtocol {
   }
 
 }
+
+case class ErrorResponseWithActivationId(error: String, code: TransactionId, activationId: String)
+
+object ErrorResponseWithActivationId extends Directives with DefaultJsonProtocol {
+
+  def terminateWithActivationId(status: StatusCode, error: String, activationId: String)(
+    implicit transid: TransactionId,
+    jsonPrinter: JsonPrinter): StandardRoute = {
+    complete(status, Option(error) filter { _.trim.nonEmpty } map { e =>
+      Some(ErrorResponseWithActivationId(e.trim, transid, activationId))
+    } getOrElse None)
+  }
+
+  implicit val serializer: RootJsonFormat[ErrorResponseWithActivationId] =
+    new RootJsonFormat[ErrorResponseWithActivationId] {
+      def write(er: ErrorResponseWithActivationId) =
+        JsObject("error" -> er.error.toJson, "code" -> er.code.meta.id.toJson, "activationId" -> er.activationId.toJson)
+
+      def read(v: JsValue) =
+        Try {
+          v.asJsObject.getFields("error", "code", "activationId") match {
+            case Seq(JsString(error), JsString(code), JsString(activationId)) =>
+              ErrorResponseWithActivationId(error, TransactionId(code), activationId)
+          }
+        } getOrElse deserializationError("error response malformed")
+    }
+}
