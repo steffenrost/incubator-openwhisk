@@ -55,6 +55,7 @@ import org.apache.openwhisk.core.entity._
 import org.apache.openwhisk.core.entity.types._
 import org.apache.openwhisk.core.loadBalancer.LoadBalancerException
 import org.apache.openwhisk.http.ErrorResponse.terminate
+import org.apache.openwhisk.http.ErrorResponseWithActivationId.terminateWithActivationId
 import org.apache.openwhisk.http.Messages
 import org.apache.openwhisk.http.LenientSprayJsonSupport._
 import org.apache.openwhisk.spi.SpiLoader
@@ -762,7 +763,7 @@ trait WhiskWebActionsApi
         // this should not happen, instead it should be a blocking invoke timeout
         logging.debug(this, "activation waiting period expired")
         respondWithActivationIdHeader(activationId) {
-          terminate(Accepted, Messages.responseNotReady)
+          terminateWithActivationId(Accepted, Messages.responseNotReady, activationId.toString)
         }
 
       case Failure(t: RejectRequest) => terminate(t.code, t.message)

@@ -349,6 +349,19 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
     error.fields.get("code").get shouldBe an[JsString]
   }
 
+  def confirmErrorWithTidAndAid(error: JsObject, message: Option[String] = None) = {
+    println(s"error: $error")
+    error.fields.size shouldBe 3
+    error.fields.get("error") shouldBe defined
+    message.foreach { m =>
+      error.fields.get("error").get shouldBe JsString(m)
+    }
+    error.fields.get("code") shouldBe defined
+    error.fields.get("code").get shouldBe an[JsString]
+    error.fields.get("activationId") shouldBe defined
+    error.fields.get("activationId").get shouldBe an[JsString]
+  }
+
   Seq(None, Some(WhiskAuthHelpers.newIdentity())).foreach { creds =>
     it should s"not match invalid routes (auth? ${creds.isDefined})" in {
       implicit val tid = transid()
@@ -481,7 +494,7 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
         m(s"$testRoutePath/$systemId/proxy/export_c.json") ~> Route.seal(routes(creds)) ~> check {
           status should be(Accepted)
           val response = responseAs[JsObject]
-          confirmErrorWithTid(response, Some("Response not yet ready."))
+          confirmErrorWithTidAndAid(response, Some("Response not yet ready."))
         }
       }
     }
