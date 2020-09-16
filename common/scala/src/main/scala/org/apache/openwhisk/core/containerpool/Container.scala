@@ -161,6 +161,7 @@ trait Container {
 
     val parameterWrapper = JsObject("value" -> parameters)
     val body = JsObject(parameterWrapper.fields ++ environment.fields)
+    println(s"@StR Container run action $actionName with body: $body")
     callContainer("/run", body, timeout, maxConcurrent, retry = false)
       .andThen { // never fails
         case Success(r: RunResult) =>

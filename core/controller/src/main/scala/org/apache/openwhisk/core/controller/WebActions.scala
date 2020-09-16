@@ -693,7 +693,7 @@ trait WhiskWebActionsApi
             .overrides(webApiDirectives.reservedProperties ++ action.immutableParameters)) {
         val content = context.toActionArgument(onBehalfOf, isRawHttpAction, keepCookies)
         System.out.println(
-          s"@StR processRequest invokeAction namespace: identity: $actionOwnerIdentity, ${actionOwnerIdentity.namespace}, authkey: ${actionOwnerIdentity.authkey}, subjects: ${actionOwnerIdentity.subject} action: $action, actionname: ${action.name}, content: $content")
+          s"@StR processRequest invokeAction identity: $actionOwnerIdentity, namespace: ${actionOwnerIdentity.namespace}, authkey: ${actionOwnerIdentity.authkey}, subjects: ${actionOwnerIdentity.subject} action: $action, actionname: ${action.name}, content: $content")
 
         invokeAction(actionOwnerIdentity, action, Some(JsObject(content)), maxWaitForWebActionResult, cause = None)
       } else {

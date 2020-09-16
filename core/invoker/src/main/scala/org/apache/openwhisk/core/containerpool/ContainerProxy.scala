@@ -596,7 +596,9 @@ class ContainerProxy(factory: (TransactionId,
    */
   def initializeAndRun(container: Container, job: Run)(implicit tid: TransactionId): Future[WhiskActivation] = {
     val actionTimeout = job.action.limits.timeout.duration
+    println(s"initializeAndRun job.msg.content: ${job.msg.content}, job.msg.initArgs: ${job.msg.initArgs}")
     val (env, parameters) = ContainerProxy.partitionArguments(job.msg.content, job.msg.initArgs)
+    println(s"initializeAndRun env: ${env}, parameters: ${parameters}")
 
     val environment = Map(
       "namespace" -> job.msg.user.namespace.name.toJson,
@@ -620,6 +622,11 @@ class ContainerProxy(factory: (TransactionId,
       case _ =>
         val owEnv = (authEnvironment ++ environment + ("deadline" -> (Instant.now.toEpochMilli + actionTimeout.toMillis).toString.toJson)) map {
           case (key, value) => "__OW_" + key.toUpperCase -> value
+        }
+
+        System.out.println(s"@StR initializeAndRun initialize env: $env, owEnv: $owEnv")
+        if (job.action.annotations.isTruthy(Annotations.WebActionAnnotationName, valueForNonExistent = false)) {
+          System.out.println(s"@StR initializeAndRun initialize action: ${job.action.name} is webaction..")
         }
 
         container
