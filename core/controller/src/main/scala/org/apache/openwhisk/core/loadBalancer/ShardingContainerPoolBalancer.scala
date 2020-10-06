@@ -338,7 +338,8 @@ object ShardingContainerPoolBalancer extends LoadBalancerProvider {
     logging: Logging,
     materializer: ActorMaterializer): LoadBalancer = {
 
-    logging.info(this, s"@StR controller name: ${whiskConfig.controllerName}")(TransactionId.controller)
+    logging.info(this, s"@StR whisk config: $whiskConfig, controller name: ${whiskConfig.controllerName}")(
+      TransactionId.controller)
 
     val invokerPoolFactory = new InvokerPoolFactory {
       override def createInvokerPool(
@@ -368,7 +369,9 @@ object ShardingContainerPoolBalancer extends LoadBalancerProvider {
       invokerPoolFactory)
   }
 
-  def requiredProperties: Map[String, String] = kafkaHosts
+  def requiredProperties: Map[String, String] =
+    kafkaHosts ++
+      Map(WhiskConfig.controllerName -> null)
 
   /** Generates a hash based on the string representation of namespace and action */
   def generateHash(namespace: EntityName, action: FullyQualifiedEntityName): Int = {
