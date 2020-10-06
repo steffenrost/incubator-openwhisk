@@ -238,6 +238,7 @@
       "METRICS_KAMON": "{{ metrics.kamon.enabled | default(false) | lower }}"
       "METRICS_KAMON_TAGS": "{{ metrics.kamon.tags | default() | lower }}"
       "METRICS_LOG": "{{ metrics.log.enabled | default(false) | lower }}"
+      "CONFIG_whisk_controller_name": "controller"
       "CONFIG_whisk_controller_protocol": "{{ controller.protocol }}"
       "CONFIG_whisk_controller_https_keystorePath":
         "/conf/{{ controller.ssl.keystore.name }}"

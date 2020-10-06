@@ -66,6 +66,7 @@ class WhiskConfig(requiredProperties: Map[String, String],
       s"${this(WhiskConfig.wskApiProtocol)}://${this(WhiskConfig.wskApiHostname)}:${this(WhiskConfig.wskApiPort)}"))
     .getOrElse("")
 
+  val controllerName = this(WhiskConfig.controllerName)
   val controllerBlackboxFraction = this.getAsDouble(WhiskConfig.controllerBlackboxFraction, 0.10)
 
   val edgeHost = this(WhiskConfig.edgeHostName) + ":" + this(WhiskConfig.edgeHostApiPort)
@@ -167,6 +168,7 @@ object WhiskConfig {
 
   val mainDockerEndpoint = "main.docker.endpoint"
 
+  val controllerName = "controller.name"
   val controllerBlackboxFraction = "controller.blackboxFraction"
   val dbInstances = "db.instances"
 
