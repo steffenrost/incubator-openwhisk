@@ -338,8 +338,7 @@ object ShardingContainerPoolBalancer extends LoadBalancerProvider {
     logging: Logging,
     materializer: ActorMaterializer): LoadBalancer = {
 
-    logging.info(this, s"@StR whisk config: $whiskConfig, controller name: ${whiskConfig.controllerName}")(
-      TransactionId.controller)
+    logging.info(this, s"controller name: ${whiskConfig.controllerName}")(TransactionId.controller)
 
     val invokerPoolFactory = new InvokerPoolFactory {
       override def createInvokerPool(
