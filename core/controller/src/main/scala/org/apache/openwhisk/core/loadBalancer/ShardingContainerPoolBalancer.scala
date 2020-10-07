@@ -338,23 +338,27 @@ object ShardingContainerPoolBalancer extends LoadBalancerProvider {
     logging: Logging,
     materializer: ActorMaterializer): LoadBalancer = {
 
+    logging.info(this, s"controller name: ${whiskConfig.controllerName}")(TransactionId.controller)
+
     val invokerPoolFactory = new InvokerPoolFactory {
       override def createInvokerPool(
         actorRefFactory: ActorRefFactory,
         messagingProvider: MessagingProvider,
         messagingProducer: MessageProducer,
         sendActivationToInvoker: (MessageProducer, ActivationMessage, InvokerInstanceId) => Future[RecordMetadata],
-        monitor: Option[ActorRef]): ActorRef = {
+        monitor: Option[ActorRef]): ActorRef =
+        if (whiskConfig.controllerName.equals("crudcontroller")) ActorRef.noSender
+        else {
 
-        InvokerPool.prepare(instance, WhiskEntityStore.datastore())
+          InvokerPool.prepare(instance, WhiskEntityStore.datastore())
 
-        actorRefFactory.actorOf(
-          InvokerPool.props(
-            (f, i) => f.actorOf(InvokerActor.props(i, instance)),
-            (m, i) => sendActivationToInvoker(messagingProducer, m, i),
-            messagingProvider.getConsumer(whiskConfig, s"health${instance.asString}", "health", maxPeek = 128),
-            monitor))
-      }
+          actorRefFactory.actorOf(
+            InvokerPool.props(
+              (f, i) => f.actorOf(InvokerActor.props(i, instance)),
+              (m, i) => sendActivationToInvoker(messagingProducer, m, i),
+              messagingProvider.getConsumer(whiskConfig, s"health${instance.asString}", "health", maxPeek = 128),
+              monitor))
+        }
 
     }
     new ShardingContainerPoolBalancer(
@@ -364,7 +368,9 @@ object ShardingContainerPoolBalancer extends LoadBalancerProvider {
       invokerPoolFactory)
   }
 
-  def requiredProperties: Map[String, String] = kafkaHosts
+  def requiredProperties: Map[String, String] =
+    kafkaHosts ++
+      Map(WhiskConfig.controllerName -> null)
 
   /** Generates a hash based on the string representation of namespace and action */
   def generateHash(namespace: EntityName, action: FullyQualifiedEntityName): Int = {
