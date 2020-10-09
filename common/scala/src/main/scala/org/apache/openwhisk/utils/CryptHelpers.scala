@@ -30,10 +30,6 @@ import javax.crypto.spec.SecretKeySpec;
 
 object CryptHelpers {
 
-  private val ALGORITHM_NAME = "AES/GCM/NoPadding"
-  private val ALGORITHM_NONCE_SIZE = 12
-  private val ALGORITHM_TAG_SIZE = 256
-
   /**
    * Decrypts base64 encoded AES encrypted string.
    *
@@ -83,14 +79,14 @@ object CryptHelpers {
   @throws(classOf[NoSuchPaddingException])
   private def decrypt(nonceAndCiphertext: Array[Byte], key: Array[Byte]): Array[Byte] = {
     // retrieve nonce and ciphertext
-    val nonce = new Array[Byte](ALGORITHM_NONCE_SIZE)
-    val ciphertext = new Array[Byte](nonceAndCiphertext.length - ALGORITHM_NONCE_SIZE);
+    val nonce = new Array[Byte](12)
+    val ciphertext = new Array[Byte](nonceAndCiphertext.length - 12);
     Array.copy(nonceAndCiphertext, 0, nonce, 0, nonce.size)
     Array.copy(nonceAndCiphertext, nonce.size, ciphertext, 0, ciphertext.size)
 
     // create cipher instance and initialize
-    val cipher = Cipher.getInstance(ALGORITHM_NAME);
-    cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(ALGORITHM_TAG_SIZE, nonce));
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding");
+    cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(128, nonce));
 
     // decrypt..
     return cipher.doFinal(ciphertext);
