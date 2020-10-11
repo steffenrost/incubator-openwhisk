@@ -51,44 +51,17 @@ object CryptHelpers {
   @throws(classOf[NoSuchAlgorithmException])
   @throws(classOf[NoSuchPaddingException])
   def decryptString(base64NonceAndCiphertext: String, key: String): String = {
-    // decode and descrypt..
+    // decode
     val nonceAndCiphertext = Base64.getDecoder().decode(base64NonceAndCiphertext);
-    return new String(decrypt(nonceAndCiphertext, key.getBytes()), StandardCharsets.UTF_8);
-  }
-
-  /**
-   * Decrypts AES encrypted byte array.
-   *
-   * @param nonceAndCiphertext AES encrypted byte array containing nonce and ciphertext
-   * @param key key encrytion key value
-   *
-   * @return decrypted byte array
-   *
-   * @throws IllegalArgumentException
-   * @throws InvalidAlgorithmParameterException
-   * @throws InvalidKeyException
-   * @throws NoSuchAlgorithmException
-   * @throws NoSuchPaddingException
-   *
-   *
-   */
-  @throws(classOf[IllegalArgumentException])
-  @throws(classOf[InvalidAlgorithmParameterException])
-  @throws(classOf[InvalidKeyException])
-  @throws(classOf[NoSuchAlgorithmException])
-  @throws(classOf[NoSuchPaddingException])
-  private def decrypt(nonceAndCiphertext: Array[Byte], key: Array[Byte]): Array[Byte] = {
     // retrieve nonce and ciphertext
     val nonce = new Array[Byte](12)
     val ciphertext = new Array[Byte](nonceAndCiphertext.length - 12);
     Array.copy(nonceAndCiphertext, 0, nonce, 0, nonce.size)
     Array.copy(nonceAndCiphertext, nonce.size, ciphertext, 0, ciphertext.size)
-
     // create cipher instance and initialize
     val cipher = Cipher.getInstance("AES/GCM/NoPadding");
-    cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(128, nonce));
-
-    // decrypt..
-    return cipher.doFinal(ciphertext);
+    cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key.getBytes(), "AES"), new GCMParameterSpec(128, nonce));
+    // decrypt and return
+    return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
   }
 }
