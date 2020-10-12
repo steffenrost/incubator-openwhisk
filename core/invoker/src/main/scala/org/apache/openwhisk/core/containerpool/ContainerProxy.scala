@@ -610,7 +610,7 @@ class ContainerProxy(factory: (TransactionId,
     val authEnvironment = {
       if (job.action.annotations.isTruthy(Annotations.ProvideApiKeyAnnotationName, valueForNonExistent = true)) {
         job.msg.user.authkey.toEnvironment.fields
-      } else Map.empty
+      } else Map.empty[String, JsValue]
     }
 
     // Only initialize iff we haven't yet warmed the container
@@ -618,13 +618,23 @@ class ContainerProxy(factory: (TransactionId,
       case data: WarmedData =>
         Future.successful(None)
       case _ =>
-        val owEnv = (authEnvironment ++ environment + ("deadline" -> (Instant.now.toEpochMilli + actionTimeout.toMillis).toString.toJson)) map {
+        val owAuthEnv = authEnvironment map {
+          case (key, value)
+              if ((key == "api_key_encrypted" || key == "iam_namespace_api_key_encrypted") &&
+                job.msg.user.namespace.name.asString == "whisk.system" &&
+                job.action.annotations.isTruthy(Annotations.FeedActionAnnotationName)) =>
+            "__OW_API_KEY_ENCRYPTED" -> value
+          case (key, value) if (key != "namespace_crn_encoded") =>
+            "__OW_" + key.toUpperCase -> value
+        }
+        val owEnv = (environment +
+          ("deadline" -> (Instant.now.toEpochMilli + actionTimeout.toMillis).toString.toJson)) map {
           case (key, value) => "__OW_" + key.toUpperCase -> value
         }
 
         container
           .initialize(
-            job.action.containerInitializer(env ++ owEnv),
+            job.action.containerInitializer(env ++ owAuthEnv ++ owEnv),
             actionTimeout,
             job.action.limits.concurrency.maxConcurrent)
           .map(Some(_))

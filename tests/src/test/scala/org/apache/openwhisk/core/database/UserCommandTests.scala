@@ -179,9 +179,12 @@ class UserCommandTests extends FlatSpec with WhiskAdminCliTestBase {
 
           //It should be possible to lookup by new namespace
           implicit val tid = transid()
-          val i = Identity.get(authStore, EntityName("foo")).futureValue
-          i.subject.asString shouldBe subject
-          resultOk("user", "get", "--namespace", "foo", subject) shouldBe generatedKey
+          org.apache.openwhisk.utils
+            .retry({
+              val i = Identity.get(authStore, EntityName("foo")).futureValue
+              i.subject.asString shouldBe subject
+              resultOk("user", "get", "--namespace", "foo", subject) shouldBe generatedKey
+            }, 10, Some(1.second), Some(s"${this.getClass.getName} lookup by new namespace not successful, retrying.."))
         },
         10,
         Some(1.second),
