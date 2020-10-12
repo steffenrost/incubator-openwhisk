@@ -19,7 +19,6 @@ package org.apache.openwhisk.core.entity
 
 object Annotations {
   val FinalParamsAnnotationName = "final"
-  val FeedActionAnnotationName = "feed"
   val WebActionAnnotationName = "web-export"
   val WebCustomOptionsAnnotationName = "web-custom-options"
   val RawHttpAnnotationName = "raw-http"
