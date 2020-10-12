@@ -298,7 +298,13 @@ class ShardingContainerPoolBalancer(
         val timeLimitInfo = if (timeLimit == TimeLimit()) { "std" } else { "non-std" }
         logging.info(
           this,
-          s"scheduled activation ${msg.activationId}, action '${msg.action.asString}' ($actionType), ns '${msg.user.namespace.name.asString}', mem limit ${memoryLimit.megabytes} MB (${memoryLimitInfo}), time limit ${timeLimit.duration.toMillis} ms (${timeLimitInfo}) to ${invoker}")
+          s"scheduled activation ${msg.activationId}, " +
+            s"action '${msg.action.asString}' ($actionType), " +
+            s"ns '${msg.user.namespace.name.asString}', " +
+            s"mem limit ${memoryLimit.megabytes} MB (${memoryLimitInfo}), " +
+            s"time limit ${timeLimit.duration.toMillis} ms (${timeLimitInfo}) " +
+            s"to ${invoker} " +
+            s"(${schedulingState.invokerSlots(invoker.instance).availablePermits} of ${invoker.userMemory.toMB} MB free)")
         val activationResult = setupActivation(msg, action, invoker)
         sendActivationToInvoker(messageProducer, msg, invoker).map(_ => activationResult)
       }
@@ -328,6 +334,15 @@ class ShardingContainerPoolBalancer(
     schedulingState.invokerSlots
       .lift(invoker.toInt)
       .foreach(_.releaseConcurrent(entry.fullyQualifiedEntityName, entry.maxConcurrent, entry.memoryLimit.toMB.toInt))
+    logging.info(
+      this,
+      s"released activation ${entry.id}, " +
+        s"action '${entry.fullyQualifiedEntityName.name}' ('${if (entry.isBlackbox) "blackbox" else "managed"}'), " +
+        s"ns '${entry.fullyQualifiedEntityName.namespace}', " +
+        s"mem limit ${entry.memoryLimit.toMB} MB), " +
+        s"time limit ${entry.timeLimit} ms) " +
+        s"to ${invoker} " +
+        s"(${schedulingState.invokerSlots(invoker.instance).availablePermits} of ${invoker.userMemory.toMB} MB free)")
   }
 }
 

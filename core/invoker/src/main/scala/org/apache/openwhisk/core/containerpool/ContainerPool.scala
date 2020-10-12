@@ -182,6 +182,20 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
               // Try to process the next item in buffer (or get another message from feed, if buffer is now empty)
               processBufferOrFeed()
             }
+
+            logging.info(
+              this,
+              s"@StR Going to schedule Run message, " +
+                s"activation: ${r.msg.activationId}, " +
+                s"action: ${r.msg.action.name}, " +
+                s"ns: ${r.msg.action.namespace}, " +
+                s"freePoolSize: ${freePool.size} containers and ${memoryConsumptionOf(freePool)} MB, " +
+                s"busyPoolSize: ${busyPool.size} containers and ${memoryConsumptionOf(busyPool)} MB, " +
+                s"maxContainersMemory ${poolConfig.userMemory.toMB} MB, " +
+                s"userNamespace: ${r.msg.user.namespace.name}, action: ${r.action}, " +
+                s"needed memory: ${r.action.limits.memory.megabytes} MB, " +
+                s"waiting messages: ${runBuffer.size}")(r.msg.transid)
+
             actor ! r // forwards the run request to the container
             logContainerStart(r, containerState, newData.activeActivationCount, container)
           case None =>
@@ -193,6 +207,9 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
               logging.warn(
                 this,
                 s"Rescheduling Run message, too many message in the pool, " +
+                  s"activation: ${r.msg.activationId}, " +
+                  s"action: ${r.msg.action.name}, " +
+                  s"ns: ${r.msg.action.namespace}, " +
                   s"freePoolSize: ${freePool.size} containers and ${memoryConsumptionOf(freePool)} MB, " +
                   s"busyPoolSize: ${busyPool.size} containers and ${memoryConsumptionOf(busyPool)} MB, " +
                   s"maxContainersMemory ${poolConfig.userMemory.toMB} MB, " +
