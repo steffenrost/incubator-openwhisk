@@ -18,6 +18,7 @@
 package org.apache.openwhisk.core.containerpool
 
 import java.time.Instant
+import java.io.{PrintWriter, StringWriter}
 
 import akka.actor.Status.{Failure => FailureMessage}
 import akka.actor.{FSM, Props, Stash}
@@ -612,6 +613,7 @@ class ContainerProxy(factory: (TransactionId,
         job.msg.user.authkey.toEnvironment.fields
       } else Map.empty[String, JsValue]
     }
+    logging.info(this, s"@StR authEnvironment: ${authEnvironment}")
 
     // Only initialize iff we haven't yet warmed the container
     val initialize = stateData match {
@@ -627,17 +629,31 @@ class ContainerProxy(factory: (TransactionId,
           case (key, value) if (key != "namespace_crn_encoded") =>
             "__OW_" + key.toUpperCase -> value
         }
+        logging.info(this, s"@StR owAuthEnv: ${owAuthEnv}")
         val owEnv = (environment +
           ("deadline" -> (Instant.now.toEpochMilli + actionTimeout.toMillis).toString.toJson)) map {
           case (key, value) => "__OW_" + key.toUpperCase -> value
         }
+        logging.info(this, s"@StR owEnv: ${owEnv}")
 
-        container
-          .initialize(
-            job.action.containerInitializer(env ++ owAuthEnv ++ owEnv),
-            actionTimeout,
-            job.action.limits.concurrency.maxConcurrent)
-          .map(Some(_))
+        try {
+          container
+            .initialize(
+              job.action.containerInitializer(env ++ owAuthEnv ++ owEnv),
+              actionTimeout,
+              job.action.limits.concurrency.maxConcurrent)
+            .map(Some(_))
+        } catch {
+          case e: Throwable =>
+            val sw = new StringWriter
+            e.printStackTrace(new PrintWriter(sw))
+            logging
+              .error(
+                this,
+                s"@StR failed to initialize container " +
+                  s"because of ${e.getClass.getSimpleName}: ${e.getMessage}, stack trace: ${sw.toString}")
+            Future.failed(new IllegalStateException("failed to initialize container"))
+        }
     }
 
     val activation: Future[WhiskActivation] = initialize
@@ -761,6 +777,22 @@ class ContainerProxy(factory: (TransactionId,
       case Left(error) => Future.failed(error)
       case Right(act)  => Future.successful(act)
     }
+  }.recover {
+    case t =>
+      val sw = new StringWriter
+      t.printStackTrace(new PrintWriter(sw))
+      logging
+        .error(
+          this,
+          s"@StR failed to initialize and run container " +
+            s"because of ${t.getClass.getSimpleName}: ${t.getMessage}, stack trace: ${sw.toString}")
+      WhiskActivation(
+        EntityPath("testspace"),
+        EntityName("testname"),
+        Subject(),
+        ActivationId.generate(),
+        Instant.now(),
+        Instant.now())
   }
 }
 
@@ -808,7 +840,7 @@ object ContainerProxy {
    * Creates a WhiskActivation ready to be sent via active ack.
    *
    * @param job the job that was executed
-   * @param interval the time it took to execute the job
+   * @param totalInterval the time it took to execute the job
    * @param response the response to return to the user
    * @return a WhiskActivation to be sent to the user
    */
