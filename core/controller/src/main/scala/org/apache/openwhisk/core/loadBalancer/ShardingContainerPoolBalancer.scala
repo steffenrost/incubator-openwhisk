@@ -304,7 +304,7 @@ class ShardingContainerPoolBalancer(
             s"mem limit ${memoryLimit.megabytes} MB (${memoryLimitInfo}), " +
             s"time limit ${timeLimit.duration.toMillis} ms (${timeLimitInfo}) " +
             s"to ${invoker} " +
-            s"(${schedulingState.invokerSlots(invoker.instance).availablePermits} of ${invoker.userMemory.toMB} MB free)")
+            s"(${schedulingState.invokerSlots(invoker.instance).availablePermits} of ${invoker.userMemory.toMB / schedulingState.clusterSize} MB free)")
         val activationResult = setupActivation(msg, action, invoker)
         sendActivationToInvoker(messageProducer, msg, invoker).map(_ => activationResult)
       }
@@ -337,12 +337,12 @@ class ShardingContainerPoolBalancer(
     logging.info(
       this,
       s"released activation ${entry.id}, " +
-        s"action '${entry.fullyQualifiedEntityName.name}' ('${if (entry.isBlackbox) "blackbox" else "managed"}'), " +
+        s"action '${entry.fullyQualifiedEntityName}' ('${if (entry.isBlackbox) "blackbox" else "managed"}'), " +
         s"ns '${entry.fullyQualifiedEntityName.namespace}', " +
-        s"mem limit ${entry.memoryLimit.toMB} MB), " +
-        s"time limit ${entry.timeLimit} ms) " +
-        s"to ${invoker} " +
-        s"(${schedulingState.invokerSlots(invoker.instance).availablePermits} of ${invoker.userMemory.toMB} MB free)")
+        s"mem limit ${entry.memoryLimit.toMB} MB, " +
+        s"time limit ${entry.timeLimit.toMillis} ms " +
+        s"from ${invoker} " +
+        s"(${schedulingState.invokerSlots(invoker.instance).availablePermits} of ${invoker.userMemory.toMB / schedulingState.clusterSize} MB free)")
   }
 }
 
