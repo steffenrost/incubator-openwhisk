@@ -58,17 +58,17 @@ sealed trait RateLimit {
 case class ConcurrentRateLimit(count: Int, allowed: Int, clusterSize: Int) extends RateLimit {
   val ok: Boolean = count < allowed // must have slack for the current activation request
   val allowedNoOvercommit = if (clusterSize > 1) Math.ceil(allowed.toDouble / 1.2).toInt else allowed
-  val countSecondCluster = if (clusterSize > 1) allowedNoOvercommit else 0
+  val countOtherControllers = allowedNoOvercommit * (clusterSize - 1)
   override def errorMsg: String =
-    Messages.tooManyConcurrentRequests(count + countSecondCluster, allowedNoOvercommit * clusterSize)
+    Messages.tooManyConcurrentRequests(count + countOtherControllers, allowedNoOvercommit * clusterSize)
   val limitName: String = "ConcurrentRateLimit"
 }
 
 case class TimedRateLimit(count: Int, allowed: Int, clusterSize: Int) extends RateLimit {
   val ok: Boolean = count <= allowed // the count is already updated to account for the current request
   val allowedNoOvercommit = if (clusterSize > 1) Math.ceil(allowed.toDouble / 1.2).toInt else allowed
-  val countSecondCluster = if (clusterSize > 1) allowedNoOvercommit else 0
+  val countOtherControllers = allowedNoOvercommit * (clusterSize - 1)
   override def errorMsg: String =
-    Messages.tooManyRequests(count + countSecondCluster, allowedNoOvercommit * clusterSize)
+    Messages.tooManyRequests(count + countOtherControllers, allowedNoOvercommit * clusterSize)
   val limitName: String = "TimedRateLimit"
 }
