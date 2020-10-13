@@ -23,6 +23,7 @@ import org.apache.openwhisk.common.Logging
 import org.apache.openwhisk.common.TransactionId
 import org.apache.openwhisk.core.entity.Identity
 import org.apache.openwhisk.core.entity.UUID
+import org.apache.openwhisk.core.loadBalancer.LoadBalancer
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -30,7 +31,8 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * For now, we throttle only at a 1-minute granularity.
  */
-class RateThrottler(description: String, maxPerMinute: Identity => Int)(implicit logging: Logging) {
+class RateThrottler(loadBalancer: LoadBalancer, description: String, maxPerMinute: Identity => Int)(
+  implicit logging: Logging) {
 
   /**
    * Maintains map of subject namespace to operations rates.
@@ -48,7 +50,7 @@ class RateThrottler(description: String, maxPerMinute: Identity => Int)(implicit
     val uuid = user.namespace.uuid // this is namespace identifier
     val throttle = rateMap.getOrElseUpdate(uuid, new RateInfo)
     val limit = maxPerMinute(user)
-    val rate = TimedRateLimit(throttle.update(limit), limit)
+    val rate = TimedRateLimit(throttle.update(limit), limit, loadBalancer.clusterSize)
     logging.debug(this, s"namespace = ${uuid.asString} rate = ${rate.count}, limit = $limit")
     rate
   }
