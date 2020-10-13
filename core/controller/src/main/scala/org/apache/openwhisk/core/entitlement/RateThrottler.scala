@@ -50,7 +50,7 @@ class RateThrottler(loadBalancer: LoadBalancer, description: String, maxPerMinut
     val uuid = user.namespace.uuid // this is namespace identifier
     val throttle = rateMap.getOrElseUpdate(uuid, new RateInfo)
     val limit = maxPerMinute(user)
-    val rate = TimedRateLimit(throttle.update(limit), limit, loadBalancer.clusterSize)
+    val rate = TimedRateLimit(throttle.update(limit), limit, loadBalancer.clusterSize.max(1))
     logging.debug(this, s"namespace = ${uuid.asString} rate = ${rate.count}, limit = $limit")
     rate
   }

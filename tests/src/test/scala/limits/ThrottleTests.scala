@@ -437,7 +437,7 @@ class NamespaceSpecificThrottleTests
             }
             results.map(_.exitCode) should contain(TestUtils.THROTTLED)
             results.map(_.stderr).mkString should {
-              include(prefix(tooManyRequests(0, 0))) and include("allowed: 1")
+              include(prefix(tooManyRequests(0, 0))) and include("allowed: 2")
             }
           }, 2, Some(1.second))
 
@@ -450,7 +450,7 @@ class NamespaceSpecificThrottleTests
             }
             results.map(_.exitCode) should contain(TestUtils.THROTTLED)
             results.map(_.stderr).mkString should {
-              include(prefix(tooManyRequests(0, 0))) and include("allowed: 1")
+              include(prefix(tooManyRequests(0, 0))) and include("allowed: 2")
             }
           }, 2, Some(1.second))
         },
@@ -494,7 +494,7 @@ class NamespaceSpecificThrottleTests
           }
           results.map(_.exitCode) should contain(TestUtils.THROTTLED)
           results.map(_.stderr).mkString should {
-            include(prefix(tooManyRequests(0, 0))) and include("allowed: 1")
+            include(prefix(tooManyRequests(0, 0))) and include("allowed: 2")
           }
         }, 2, Some(1.second))
       },

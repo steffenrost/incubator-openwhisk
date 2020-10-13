@@ -44,7 +44,7 @@ class ActivationThrottler(loadBalancer: LoadBalancer, concurrencyLimit: Identity
       logging.debug(
         this,
         s"namespace = ${user.namespace.uuid.asString}, concurrent activations = $concurrentActivations, below limit = $currentLimit")
-      ConcurrentRateLimit(concurrentActivations, currentLimit, loadBalancer.clusterSize)
+      ConcurrentRateLimit(concurrentActivations, currentLimit, loadBalancer.clusterSize.max(1))
     }
   }
 }
@@ -57,15 +57,18 @@ sealed trait RateLimit {
 
 case class ConcurrentRateLimit(count: Int, allowed: Int, clusterSize: Int) extends RateLimit {
   val ok: Boolean = count < allowed // must have slack for the current activation request
-  val allowedSecondCluster = if (clusterSize > 1) Math.ceil(allowed.toDouble / 1.2).toInt else 0
+  val allowedNoOvercommit = if (clusterSize > 1) Math.ceil(allowed.toDouble / 1.2).toInt else allowed
+  val countSecondCluster = if (clusterSize > 1) allowedNoOvercommit else 0
   override def errorMsg: String =
-    Messages.tooManyConcurrentRequests(count + allowedSecondCluster, allowed + allowedSecondCluster)
+    Messages.tooManyConcurrentRequests(count + countSecondCluster, allowedNoOvercommit * clusterSize)
   val limitName: String = "ConcurrentRateLimit"
 }
 
 case class TimedRateLimit(count: Int, allowed: Int, clusterSize: Int) extends RateLimit {
   val ok: Boolean = count <= allowed // the count is already updated to account for the current request
-  val allowedSecondCluster = if (clusterSize > 1) Math.ceil(allowed.toDouble / 1.2).toInt else 0
-  override def errorMsg: String = Messages.tooManyRequests(count + allowedSecondCluster, allowed + allowedSecondCluster)
+  val allowedNoOvercommit = if (clusterSize > 1) Math.ceil(allowed.toDouble / 1.2).toInt else allowed
+  val countSecondCluster = if (clusterSize > 1) allowedNoOvercommit else 0
+  override def errorMsg: String =
+    Messages.tooManyRequests(count + countSecondCluster, allowedNoOvercommit * clusterSize)
   val limitName: String = "TimedRateLimit"
 }
