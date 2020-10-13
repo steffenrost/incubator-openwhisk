@@ -334,7 +334,7 @@ class ShardingContainerPoolBalancer(
     schedulingState.invokerSlots
       .lift(invoker.toInt)
       .foreach(_.releaseConcurrent(entry.fullyQualifiedEntityName, entry.maxConcurrent, entry.memoryLimit.toMB.toInt))
-    logging.info(
+    logging.debug(
       this,
       s"released activation ${entry.id}, " +
         s"action '${entry.fullyQualifiedEntityName}' ('${if (entry.isBlackbox) "blackbox" else "managed"}'), " +
