@@ -193,6 +193,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
               logging.warn(
                 this,
                 s"Rescheduling Run message, too many message in the pool, " +
+                  s"activation: ${r.msg.activationId}, " +
                   s"freePoolSize: ${freePool.size} containers and ${memoryConsumptionOf(freePool)} MB, " +
                   s"busyPoolSize: ${busyPool.size} containers and ${memoryConsumptionOf(busyPool)} MB, " +
                   s"maxContainersMemory ${poolConfig.userMemory.toMB} MB, " +
