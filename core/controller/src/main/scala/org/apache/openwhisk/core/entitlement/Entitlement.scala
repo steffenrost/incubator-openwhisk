@@ -135,10 +135,12 @@ protected[core] abstract class EntitlementProvider(
 
   private val invokeRateThrottler =
     new RateThrottler(
+      loadBalancer,
       "actions per minute",
       calculateIndividualLimit(config.actionInvokePerMinuteLimit.toInt, _.limits.invocationsPerMinute))
   private val triggerRateThrottler =
     new RateThrottler(
+      loadBalancer,
       "triggers per minute",
       calculateIndividualLimit(config.triggerFirePerMinuteLimit.toInt, _.limits.firesPerMinute))
 

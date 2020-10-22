@@ -427,6 +427,8 @@ class NamespaceSpecificThrottleTests
           }
 
           val deployedControllers = WhiskProperties.getControllerHosts.split(",").length
+          System.out.println(
+            s"deployedControllers: ${WhiskProperties.getControllerHosts.split(",")}, count: $deployedControllers")
 
           // One invoke should be allowed, the second one throttled.
           // Due to the current implementation of the rate throttling,
@@ -437,7 +439,7 @@ class NamespaceSpecificThrottleTests
             }
             results.map(_.exitCode) should contain(TestUtils.THROTTLED)
             results.map(_.stderr).mkString should {
-              include(prefix(tooManyRequests(0, 0))) and include("allowed: 1")
+              include(prefix(tooManyRequests(0, 0))) and include(s"allowed: $deployedControllers")
             }
           }, 2, Some(1.second))
 
@@ -450,7 +452,7 @@ class NamespaceSpecificThrottleTests
             }
             results.map(_.exitCode) should contain(TestUtils.THROTTLED)
             results.map(_.stderr).mkString should {
-              include(prefix(tooManyRequests(0, 0))) and include("allowed: 1")
+              include(prefix(tooManyRequests(0, 0))) and include(s"allowed: $deployedControllers")
             }
           }, 2, Some(1.second))
         },
@@ -479,6 +481,8 @@ class NamespaceSpecificThrottleTests
         }
 
         val deployedControllers = WhiskProperties.getControllerHosts.split(",").length
+        System.out.println(
+          s"deployedControllers: ${WhiskProperties.getControllerHosts.split(",")}, count: $deployedControllers")
 
         // One invoke should be allowed.
         wsk.action
@@ -494,7 +498,7 @@ class NamespaceSpecificThrottleTests
           }
           results.map(_.exitCode) should contain(TestUtils.THROTTLED)
           results.map(_.stderr).mkString should {
-            include(prefix(tooManyRequests(0, 0))) and include("allowed: 1")
+            include(prefix(tooManyRequests(0, 0))) and include(s"allowed: $deployedControllers")
           }
         }, 2, Some(1.second))
       },
