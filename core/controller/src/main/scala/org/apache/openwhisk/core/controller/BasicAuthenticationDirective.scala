@@ -63,6 +63,9 @@ object BasicAuthenticationDirective extends AuthenticationDirectiveProvider {
           case _: NoDocumentException | _: IllegalArgumentException =>
             logging.debug(this, s"authentication not valid")
             None
+          case e =>
+            logging.info(this, s"authentication not valid: ${e.getMessage}")
+            None
         }
         future.failed.foreach(t => logging.error(this, s"authentication error: $t"))
         future
