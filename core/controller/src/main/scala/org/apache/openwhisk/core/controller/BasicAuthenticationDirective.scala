@@ -60,14 +60,11 @@ object BasicAuthenticationDirective extends AuthenticationDirectiveProvider {
             None
           }
         } recover {
-          case e: NoDocumentException =>
-            logging.info(this, s"authentication not valid(nodocexc): ${e.getMessage}")
-            None
-          case e: IllegalArgumentException =>
-            logging.info(this, s"authentication not valid(illargexc): ${e.getMessage}")
+          case _: NoDocumentException | _: IllegalArgumentException =>
+            logging.info(this, s"authentication not valid")
             None
           case e =>
-            logging.info(this, s"authentication not valid: ${e.getMessage}")
+            logging.error(this, s"authentication error: ${e.getMessage}")
             throw e
         }
         future.failed.foreach(t => logging.error(this, s"authentication error: $t"))
