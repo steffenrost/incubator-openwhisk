@@ -193,7 +193,7 @@ protected[actions] trait SequenceActions {
                                      topmost: Boolean,
                                      cause: Option[ActivationId],
                                      start: Instant,
-                                     end: Instant): WhiskActivation = {
+                                     end: Instant)(implicit transid: TransactionId): WhiskActivation = {
 
     // compute max memory
     val sequenceLimits = accounting.maxMemory map { maxMemoryAcrossActionsInSequence =>
@@ -229,7 +229,7 @@ protected[actions] trait SequenceActions {
         Parameters(WhiskActivation.pathAnnotation, JsString(action.fullyQualifiedName(false).asString)) ++
         Parameters(WhiskActivation.kindAnnotation, JsString(Exec.SEQUENCE)) ++
         causedBy ++ binding ++
-        sequenceLimits,
+        sequenceLimits ++ Parameters(WhiskActivation.transIdAnnotation, JsString(transid.id)),
       duration = Some(accounting.duration))
   }
 

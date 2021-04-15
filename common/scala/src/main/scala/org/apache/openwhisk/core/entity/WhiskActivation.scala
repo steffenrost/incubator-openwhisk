@@ -144,6 +144,7 @@ object WhiskActivation
   val waitTimeAnnotation = "waitTime"
   val conductorAnnotation = "conductor"
   val timeoutAnnotation = "timeout"
+  val transIdAnnotation = "transId"
 
   val memory = "memory"
   val duration = "duration"

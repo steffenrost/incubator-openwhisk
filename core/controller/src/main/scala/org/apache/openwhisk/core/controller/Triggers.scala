@@ -158,7 +158,11 @@ trait WhiskTriggersApi extends WhiskCollectionAPI {
                 Instant.EPOCH,
                 response = ActivationResponse.success(payload orElse Some(JsObject.empty)),
                 version = trigger.version,
-                duration = None)
+                duration = None,
+                annotations = {
+                  Parameters(WhiskActivation.kindAnnotation, JsString("trigger")) ++
+                    Parameters(WhiskActivation.transIdAnnotation, JsString(transid.id))
+                })
               val args: JsObject = trigger.parameters.merge(payload).getOrElse(JsObject.empty)
 
               activateRules(user, args, trigger.rules.getOrElse(Map.empty))

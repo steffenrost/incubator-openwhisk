@@ -335,7 +335,9 @@ class InvokerReactive(
       response = response,
       annotations = {
         Parameters(WhiskActivation.pathAnnotation, JsString(msg.action.asString)) ++
-          Parameters(WhiskActivation.kindAnnotation, JsString(Exec.UNKNOWN)) ++ causedBy
+          Parameters(WhiskActivation.kindAnnotation, JsString(Exec.UNKNOWN)) ++ causedBy ++ Parameters(
+          WhiskActivation.transIdAnnotation,
+          JsString(msg.transid.id))
       })
   }
 

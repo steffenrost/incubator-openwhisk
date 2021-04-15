@@ -565,7 +565,7 @@ protected[actions] trait PrimitiveActions {
         Parameters(WhiskActivation.kindAnnotation, JsString(Exec.SEQUENCE)) ++
         Parameters(WhiskActivation.conductorAnnotation, JsTrue) ++
         causedBy ++ binding ++
-        sequenceLimits,
+        sequenceLimits ++ Parameters(WhiskActivation.transIdAnnotation, JsString(transid.id)),
       duration = Some(session.duration))
 
     if (UserEvents.enabled) {
