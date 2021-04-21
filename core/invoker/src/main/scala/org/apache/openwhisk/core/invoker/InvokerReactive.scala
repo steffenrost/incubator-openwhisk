@@ -159,9 +159,9 @@ class InvokerReactive(
     logging.debug(this, "running background job to update blacklist")
     namespaceBlacklist.refreshBlacklist()(ec, TransactionId.invoker).andThen {
       case Success(set) => {
-        logging.info(this, s"updated blacklist to ${set.size} entries")
+        logging.warn(this, s"updated blacklist to ${set.size} entries")
         if (set.contains(instance.displayedName.getOrElse(""))) {
-          logging.warn(this, s"invoker ${instance.toString} is blacklisted, no controller pings will be sent")
+          logging.warn(this, s"invoker ${instance.toString} is blacklisted")
         }
       }
       case Failure(t) => logging.error(this, s"error on updating the blacklist: ${t.getMessage}")
@@ -343,12 +343,10 @@ class InvokerReactive(
 
   private val healthProducer = msgProvider.getProducer(config)
   Scheduler.scheduleWaitAtMost(1.seconds)(() => {
-    if (!namespaceBlacklist.isBlacklisted(instance.displayedName.getOrElse(""))) {
-      healthProducer.send("health", PingMessage(instance)).andThen {
+    healthProducer
+      .send("health", PingMessage(instance, namespaceBlacklist.isBlacklisted(instance.displayedName.getOrElse(""))))
+      .andThen {
         case Failure(t) => logging.error(this, s"failed to ping the controller: $t")
       }
-    } else {
-      Future.successful(())
-    }
   })
 }
