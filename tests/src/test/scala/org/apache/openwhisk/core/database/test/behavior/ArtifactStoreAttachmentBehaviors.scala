@@ -75,8 +75,8 @@ trait ArtifactStoreAttachmentBehaviors extends ArtifactStoreBehaviorBase with Ex
   }
 
   /**
-   * This test asserts that old attachments are deleted and cannot be read again
-   */
+    * This test asserts that old attachments are deleted and cannot be read again
+    */
   it should "fail on reading with old non inlined attachment" in {
     org.apache.openwhisk.utils
       .retry(
@@ -109,9 +109,9 @@ trait ArtifactStoreAttachmentBehaviors extends ArtifactStoreBehaviorBase with Ex
   }
 
   /**
-   * Variant of previous test where read with old attachment should still work
-   * if attachment is inlined
-   */
+    * Variant of previous test where read with old attachment should still work
+    * if attachment is inlined
+    */
   it should "work on reading with old inlined attachment" in {
     org.apache.openwhisk.utils
       .retry(
@@ -227,22 +227,11 @@ trait ArtifactStoreAttachmentBehaviors extends ArtifactStoreBehaviorBase with Ex
             getAttachmentStore(entityStore).map(s => s"${s.scheme}:$attachmentName").getOrElse(attachmentName)
 
           val sink = StreamConverters.fromOutputStream(() => new ByteArrayOutputStream())
-
-          val foo = entityStore
+          entityStore
             .readAttachment[IOResult](
             DocInfo ! ("non-existing-doc", "42"),
             Attached(attachmentId, ContentTypes.`application/octet-stream`),
             sink)
-          foo
-
-            .failed
-            .futureValue shouldBe a[NoDocumentException]
-
-          entityStore
-            .readAttachment[IOResult](
-              DocInfo ! ("non-existing-doc", "42"),
-              Attached(attachmentId, ContentTypes.`application/octet-stream`),
-              sink)
             .failed
             .futureValue shouldBe a[NoDocumentException]
         },

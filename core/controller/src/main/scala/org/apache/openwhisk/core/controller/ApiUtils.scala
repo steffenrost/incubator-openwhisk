@@ -17,7 +17,6 @@
 
 package org.apache.openwhisk.core.controller
 
-import java.io.{PrintWriter, StringWriter}
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.util.Failure
@@ -68,9 +67,9 @@ protected[core] object RejectRequest {
 }
 
 /**
- * A convenient typedef for functions that post process an entity
- * on an operation and terminate the HTTP request.
- */
+  * A convenient typedef for functions that post process an entity
+  * on an operation and terminate the HTTP request.
+  */
 object PostProcess {
   type PostProcessEntity[A] = A => RequestContext => Future[RouteResult]
 }
@@ -87,12 +86,12 @@ trait ReadOps extends Directives {
   import RestApiCommons.jsonDefaultResponsePrinter
 
   /**
-   * Terminates HTTP request for list requests.
-   *
-   * Responses are one of (Code, Message)
-   * - 200 entity A [] as JSON []
-   * - 500 Internal Server Error
-   */
+    * Terminates HTTP request for list requests.
+    *
+    * Responses are one of (Code, Message)
+    * - 200 entity A [] as JSON []
+    * - 500 Internal Server Error
+    */
   protected def listEntities(list: Future[List[JsValue]])(implicit transid: TransactionId) = {
     onComplete(list) {
       case Success(entities) =>
@@ -105,12 +104,12 @@ trait ReadOps extends Directives {
   }
 
   /**
-   * Terminates HTTP request for list count requests.
-   *
-   * Responses are one of (Code, Message)
-   * - 200 JSON object
-   * - 500 Internal Server Error
-   */
+    * Terminates HTTP request for list count requests.
+    *
+    * Responses are one of (Code, Message)
+    * - 200 JSON object
+    * - 500 Internal Server Error
+    */
   protected def countEntities(count: Future[JsValue])(implicit transid: TransactionId) = {
     onComplete(count) {
       case Success(c) =>
@@ -123,22 +122,22 @@ trait ReadOps extends Directives {
   }
 
   /**
-   * Waits on specified Future that returns an entity of type A from datastore. Terminates HTTP request.
-   *
-   * @param entity future that returns an entity of type A fetched from datastore
-   * @param postProcess an optional continuation to post process the result of the
-   * get and terminate the HTTP request directly
-   *
-   * Responses are one of (Code, Message)
-   * - 200 entity A as JSON
-   * - 404 Not Found
-   * - 500 Internal Server Error
-   */
+    * Waits on specified Future that returns an entity of type A from datastore. Terminates HTTP request.
+    *
+    * @param entity future that returns an entity of type A fetched from datastore
+    * @param postProcess an optional continuation to post process the result of the
+    * get and terminate the HTTP request directly
+    *
+    * Responses are one of (Code, Message)
+    * - 200 entity A as JSON
+    * - 404 Not Found
+    * - 500 Internal Server Error
+    */
   protected def getEntity[A <: DocumentRevisionProvider, Au >: A](entity: Future[A],
                                                                   postProcess: Option[PostProcessEntity[A]] = None)(
-    implicit transid: TransactionId,
-    format: RootJsonFormat[A],
-    ma: Manifest[A]) = {
+                                                                   implicit transid: TransactionId,
+                                                                   format: RootJsonFormat[A],
+                                                                   ma: Manifest[A]) = {
     onComplete(entity) {
       case Success(entity) =>
         logging.debug(this, s"[GET] entity success")
@@ -159,19 +158,19 @@ trait ReadOps extends Directives {
   }
 
   /**
-   * Waits on specified Future that returns an entity of type A from datastore. Terminates HTTP request.
-   *
-   * @param entity future that returns an entity of type A fetched from datastore
-   * @param project a function A => JSON which projects fields form A
-   *
-   * Responses are one of (Code, Message)
-   * - 200 project(A) as JSON
-   * - 404 Not Found
-   * - 500 Internal Server Error
-   */
+    * Waits on specified Future that returns an entity of type A from datastore. Terminates HTTP request.
+    *
+    * @param entity future that returns an entity of type A fetched from datastore
+    * @param project a function A => JSON which projects fields form A
+    *
+    * Responses are one of (Code, Message)
+    * - 200 project(A) as JSON
+    * - 404 Not Found
+    * - 500 Internal Server Error
+    */
   protected def getEntityAndProject[A <: DocumentRevisionProvider, Au >: A](
-    entity: Future[A],
-    project: A => Future[JsObject])(implicit transid: TransactionId, format: RootJsonFormat[A], ma: Manifest[A]) = {
+                                                                             entity: Future[A],
+                                                                             project: A => Future[JsObject])(implicit transid: TransactionId, format: RootJsonFormat[A], ma: Manifest[A]) = {
     onComplete(entity) {
       case Success(entity) =>
         logging.debug(this, s"[PROJECT] entity success")
@@ -210,32 +209,32 @@ trait WriteOps extends Directives {
   import RestApiCommons.jsonDefaultResponsePrinter
 
   /**
-   * A predicate future that completes with true iff the entity should be
-   * stored in the datastore. Future should fail otherwise with RejectPut.
-   */
+    * A predicate future that completes with true iff the entity should be
+    * stored in the datastore. Future should fail otherwise with RejectPut.
+    */
   protected type PutPredicate = Future[Boolean]
 
   /**
-   * Creates or updates an entity of type A in the datastore. First, fetch the entity
-   * by id from the datastore (this is required to get the document revision for an update).
-   * If the entity does not exist, create it. If it does exist, and 'overwrite' is enabled,
-   * update the entity.
-   *
-   * @param factory the factory that can fetch entity of type A from datastore
-   * @param datastore the client to the database
-   * @param docid the document id to put
-   * @param overwrite updates an existing entity iff overwrite == true
-   * @param update a function (A) => Future[A] that updates the existing entity with PUT content
-   * @param create a function () => Future[A] that creates a new entity from PUT content
-   * @param treatExistsAsConflict if true and document exists but overwrite is not enabled, respond
-   * with Conflict else return OK and the existing document
-   *
-   * Responses are one of (Code, Message)
-   * - 200 entity A as JSON
-   * - 400 Bad Request
-   * - 409 Conflict
-   * - 500 Internal Server Error
-   */
+    * Creates or updates an entity of type A in the datastore. First, fetch the entity
+    * by id from the datastore (this is required to get the document revision for an update).
+    * If the entity does not exist, create it. If it does exist, and 'overwrite' is enabled,
+    * update the entity.
+    *
+    * @param factory the factory that can fetch entity of type A from datastore
+    * @param datastore the client to the database
+    * @param docid the document id to put
+    * @param overwrite updates an existing entity iff overwrite == true
+    * @param update a function (A) => Future[A] that updates the existing entity with PUT content
+    * @param create a function () => Future[A] that creates a new entity from PUT content
+    * @param treatExistsAsConflict if true and document exists but overwrite is not enabled, respond
+    * with Conflict else return OK and the existing document
+    *
+    * Responses are one of (Code, Message)
+    * - 200 entity A as JSON
+    * - 400 Bad Request
+    * - 409 Conflict
+    * - 500 Internal Server Error
+    */
   protected def putEntity[A <: DocumentRevisionProvider, Au >: A](factory: DocumentFactory[A],
                                                                   datastore: ArtifactStore[Au],
                                                                   docid: DocId,
@@ -244,10 +243,10 @@ trait WriteOps extends Directives {
                                                                   create: () => Future[A],
                                                                   treatExistsAsConflict: Boolean = true,
                                                                   postProcess: Option[PostProcessEntity[A]] = None)(
-    implicit transid: TransactionId,
-    format: RootJsonFormat[A],
-    notifier: Option[CacheChangeNotification],
-    ma: Manifest[A]) = {
+                                                                   implicit transid: TransactionId,
+                                                                   format: RootJsonFormat[A],
+                                                                   notifier: Option[CacheChangeNotification],
+                                                                   ma: Manifest[A]) = {
     // marker to return an existing doc with status OK rather than conflict if overwrite is false
     case class IdentityPut(self: A) extends Throwable
 
@@ -264,11 +263,8 @@ trait WriteOps extends Directives {
         Future failed IdentityPut(doc)
       }
     } recoverWith {
-      case e: NoDocumentException =>
+      case _: NoDocumentException =>
         logging.debug(this, s"[PUT] entity does not exist, will try to create it")
-        val sw = new StringWriter
-        e.printStackTrace(new PrintWriter(sw))
-        logging.error(this, s"[PUT] entity failed: ${sw.toString}")
         create().map(newDoc => (None, newDoc))
     } flatMap {
       case (old, a) =>
@@ -302,31 +298,31 @@ trait WriteOps extends Directives {
   }
 
   /**
-   * Deletes an entity of type A from datastore.
-   * To delete an entity, first fetch the record to identify its revision and then delete it.
-   * Terminates HTTP request.
-   *
-   * @param factory the factory that can fetch entity of type A from datastore
-   * @param datastore the client to the database
-   * @param docid the document id to delete
-   * @param confirm a function (A => Future[Unit]) that confirms the entity is safe to delete (must fail future to abort)
-   * or fails the future with an appropriate message
-   *
-   * Responses are one of (Code, Message)
-   * - 200 entity A as JSON
-   * - 404 Not Found
-   * - 409 Conflict
-   * - 500 Internal Server Error
-   */
+    * Deletes an entity of type A from datastore.
+    * To delete an entity, first fetch the record to identify its revision and then delete it.
+    * Terminates HTTP request.
+    *
+    * @param factory the factory that can fetch entity of type A from datastore
+    * @param datastore the client to the database
+    * @param docid the document id to delete
+    * @param confirm a function (A => Future[Unit]) that confirms the entity is safe to delete (must fail future to abort)
+    * or fails the future with an appropriate message
+    *
+    * Responses are one of (Code, Message)
+    * - 200 entity A as JSON
+    * - 404 Not Found
+    * - 409 Conflict
+    * - 500 Internal Server Error
+    */
   protected def deleteEntity[A <: WhiskDocument, Au >: A](factory: DocumentFactory[A],
                                                           datastore: ArtifactStore[Au],
                                                           docid: DocId,
                                                           confirm: A => Future[Unit],
                                                           postProcess: Option[PostProcessEntity[A]] = None)(
-    implicit transid: TransactionId,
-    format: RootJsonFormat[A],
-    notifier: Option[CacheChangeNotification],
-    ma: Manifest[A]) = {
+                                                           implicit transid: TransactionId,
+                                                           format: RootJsonFormat[A],
+                                                           notifier: Option[CacheChangeNotification],
+                                                           ma: Manifest[A]) = {
     onComplete(factory.get(datastore, docid) flatMap { entity =>
       confirm(entity) flatMap {
         case _ =>
@@ -340,9 +336,6 @@ trait WriteOps extends Directives {
         postProcess map { _(entity) } getOrElse complete(OK, entity)
       case Failure(t: NoDocumentException) =>
         logging.debug(this, s"[DEL] entity does not exist")
-        val sw = new StringWriter
-        t.printStackTrace(new PrintWriter(sw))
-        logging.error(this, s"[DEL] entity failed: ${sw.toString}")
         terminate(NotFound)
       case Failure(t: DocumentConflictException) =>
         logging.debug(this, s"[DEL] entity conflict: ${t.getMessage}")
