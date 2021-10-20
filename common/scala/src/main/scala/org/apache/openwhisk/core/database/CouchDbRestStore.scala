@@ -17,6 +17,8 @@
 
 package org.apache.openwhisk.core.database
 
+import java.util.Base64
+
 import akka.actor.ActorSystem
 import akka.event.Logging.ErrorLevel
 import akka.http.scaladsl.model._
@@ -34,6 +36,7 @@ import org.apache.openwhisk.http.Messages
 
 import scala.concurrent.Future
 import scala.util.Failure
+//import scala.util.Success
 import scala.util.Try
 
 /**
@@ -457,7 +460,25 @@ class CouchDbRestStore[DocumentAbstraction <: DocumentSerializer](dbProtocol: St
       case s if s == couchScheme || attachmentUri.isRelative =>
         //relative case is for compatibility with earlier naming approach where attachment name would be like 'jarfile'
         //Compared to current approach of '<scheme>:<name>'
-        readAttachmentFromCouch(doc, attachmentUri, sink) andThen {
+        val attachment = readAttachmentFromCouch(doc, attachmentUri, sink)
+        attachment.transformWith {
+          case Failure(_: NoDocumentException) =>
+            // In case attachment for couch scheme does not exist fallback to empty attachment for mem scheme
+            // to allow updates/deletes of actions with orphaned attachments and
+            // avoid 404 (The requested resource does not exist) or 409 (Concurrent modification to resource detected) errors
+            val memAttachmentUriFallback = Uri("mem://")
+            logging.error(
+              this,
+              s"[ATT_GET] '$dbName', retrieving attachment '$name' of document '$doc'; not found, fallback to mem attachment uri $memAttachmentUriFallback")
+            val attachment = Base64.getUrlDecoder.decode(memAttachmentUriFallback.path.toString())
+            logging.error(
+              this,
+              s"[ATT_GET] '$dbName', retrieving attachment '$name' of document '$doc'; not found, fallback to mem attachment '$attachment'")
+            memorySource(memAttachmentUriFallback).runWith(sink)
+          case _ => attachment
+        }
+
+      /*readAttachmentFromCouch(doc, attachmentUri, sink) andThen {
           case Failure(_: NoDocumentException) =>
             // In case attachment for couch scheme does not exist fallback to empty attachment for mem scheme
             // to allow updates/deletes of actions with orphaned attachments and
@@ -467,7 +488,7 @@ class CouchDbRestStore[DocumentAbstraction <: DocumentSerializer](dbProtocol: St
               this,
               s"[ATT_GET] '$dbName', retrieving attachment '$name' of document '$doc'; not found, fallback to attachment uri $attachmentUriFallback")
             memorySource(attachmentUriFallback).runWith(sink)
-        }
+        }*/
       case s if attachmentStore.isDefined && attachmentStore.get.scheme == s =>
         attachmentStore.get.readAttachment(doc.id, attachmentUri.path.toString, sink)
       case _ =>
