@@ -227,6 +227,17 @@ trait ArtifactStoreAttachmentBehaviors extends ArtifactStoreBehaviorBase with Ex
             getAttachmentStore(entityStore).map(s => s"${s.scheme}:$attachmentName").getOrElse(attachmentName)
 
           val sink = StreamConverters.fromOutputStream(() => new ByteArrayOutputStream())
+
+          val foo = entityStore
+            .readAttachment[IOResult](
+            DocInfo ! ("non-existing-doc", "42"),
+            Attached(attachmentId, ContentTypes.`application/octet-stream`),
+            sink)
+          foo
+
+            .failed
+            .futureValue shouldBe a[NoDocumentException]
+
           entityStore
             .readAttachment[IOResult](
               DocInfo ! ("non-existing-doc", "42"),

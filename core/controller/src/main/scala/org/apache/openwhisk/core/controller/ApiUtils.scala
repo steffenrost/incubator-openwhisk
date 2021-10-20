@@ -17,6 +17,7 @@
 
 package org.apache.openwhisk.core.controller
 
+import java.io.{PrintWriter, StringWriter}
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.util.Failure
@@ -263,8 +264,11 @@ trait WriteOps extends Directives {
         Future failed IdentityPut(doc)
       }
     } recoverWith {
-      case _: NoDocumentException =>
+      case e: NoDocumentException =>
         logging.debug(this, s"[PUT] entity does not exist, will try to create it")
+        val sw = new StringWriter
+        e.printStackTrace(new PrintWriter(sw))
+        logging.error(this, s"[PUT] entity failed: ${sw.toString}")
         create().map(newDoc => (None, newDoc))
     } flatMap {
       case (old, a) =>
@@ -336,6 +340,9 @@ trait WriteOps extends Directives {
         postProcess map { _(entity) } getOrElse complete(OK, entity)
       case Failure(t: NoDocumentException) =>
         logging.debug(this, s"[DEL] entity does not exist")
+        val sw = new StringWriter
+        t.printStackTrace(new PrintWriter(sw))
+        logging.error(this, s"[DEL] entity failed: ${sw.toString}")
         terminate(NotFound)
       case Failure(t: DocumentConflictException) =>
         logging.debug(this, s"[DEL] entity conflict: ${t.getMessage}")
