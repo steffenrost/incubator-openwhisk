@@ -18,7 +18,6 @@ package org.apache.openwhisk.core.database
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.model.ContentType
-import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.{Sink, Source}
 import akka.util.ByteString
 import org.apache.openwhisk.common.{Logging, TransactionId}
@@ -30,8 +29,7 @@ import scala.reflect.ClassTag
 
 trait AttachmentStoreProvider extends Spi {
   def makeStore[D <: DocumentSerializer: ClassTag]()(implicit actorSystem: ActorSystem,
-                                                     logging: Logging,
-                                                     materializer: ActorMaterializer): AttachmentStore
+                                                     logging: Logging): AttachmentStore
 }
 
 case class AttachResult(digest: String, length: Long)

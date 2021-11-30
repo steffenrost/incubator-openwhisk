@@ -26,7 +26,6 @@ import akka.actor.ActorLogging
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers._
-import akka.stream.ActorMaterializer
 import akka.stream.Materializer
 import akka.stream.scaladsl._
 import akka.pattern.ask
@@ -52,7 +51,6 @@ class RESTProxy(val host: String, val port: Int)(val serviceAuthority: Uri.Autho
   private val destPort = serviceAuthority.port
 
   // These change as connections come and go
-  private var materializer: Option[ActorMaterializer] = None
   private var binding: Option[Http.ServerBinding] = None
 
   // Public messages
@@ -64,8 +62,7 @@ class RESTProxy(val host: String, val port: Int)(val serviceAuthority: Uri.Autho
   private case class Request(request: HttpRequest)
 
   // Route requests through messages to this actor, to serialize w.r.t events such as unbinding
-  private def mkRequestFlow(materializer: Materializer): Flow[HttpRequest, HttpResponse, _] = {
-    implicit val m = materializer
+  private def mkRequestFlow(): Flow[HttpRequest, HttpResponse, _] = {
 
     Flow.apply[HttpRequest].mapAsync(4) { request =>
       ask(self, Request(request))(timeout = Timeout(1.minute)).mapTo[HttpResponse]
@@ -76,11 +73,8 @@ class RESTProxy(val host: String, val port: Int)(val serviceAuthority: Uri.Autho
     assert(!checkState || binding.isEmpty, "Proxy is already bound")
 
     if (binding.isEmpty) {
-      assert(materializer.isEmpty)
-      implicit val m = ActorMaterializer()
-      materializer = Some(m)
       log.debug(s"[RESTProxy] Binding to '$host:$port'.")
-      val b = Await.result(Http().bindAndHandle(mkRequestFlow(m), host, port), 5.seconds)
+      val b = Await.result(Http().bindAndHandle(mkRequestFlow(), host, port), 5.seconds)
       binding = Some(b)
     }
   }
@@ -92,11 +86,6 @@ class RESTProxy(val host: String, val port: Int)(val serviceAuthority: Uri.Autho
       log.debug(s"[RESTProxy] Unbinding from '${b.localAddress}'")
       Await.result(b.unbind(), 5.seconds)
       binding = None
-      assert(materializer.isDefined)
-      materializer.foreach { m =>
-        materializer = None
-        m.shutdown()
-      }
     }
   }
 
@@ -118,26 +107,25 @@ class RESTProxy(val host: String, val port: Int)(val serviceAuthority: Uri.Autho
     case Request(request) =>
       // If the actor isn't bound to the port / has no materializer,
       // the request is simply dropped.
-      materializer.map { implicit m =>
-        log.debug(s"[RESTProxy] Proxying '${request.uri}' to '${serviceAuthority}'")
 
-        val flow = if (useHTTPS) {
-          Http().outgoingConnectionHttps(destHost, destPort)
-        } else {
-          Http().outgoingConnection(destHost, destPort)
-        }
+      log.debug(s"[RESTProxy] Proxying '${request.uri}' to '${serviceAuthority}'")
 
-        // akka-http doesn't like us to set those headers ourselves.
-        val upstreamRequest = request.copy(headers = request.headers.filter(_ match {
-          case `Timeout-Access`(_) => false
-          case _                   => true
-        }))
-
-        Source
-          .single(upstreamRequest)
-          .via(flow)
-          .runWith(Sink.head)
-          .pipeTo(sender)
+      val flow = if (useHTTPS) {
+        Http().outgoingConnectionHttps(destHost, destPort)
+      } else {
+        Http().outgoingConnection(destHost, destPort)
       }
+
+      // akka-http doesn't like us to set those headers ourselves.
+      val upstreamRequest = request.withHeaders(headers = request.headers.filter(_ match {
+        case `Timeout-Access`(_) => false
+        case _                   => true
+      }))
+
+      Source
+        .single(upstreamRequest)
+        .via(flow)
+        .runWith(Sink.head)
+        .pipeTo(sender)
   }
 }

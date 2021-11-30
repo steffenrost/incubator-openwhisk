@@ -28,7 +28,6 @@ import org.apache.openwhisk.core.loadBalancer.ShardingContainerPoolBalancer
 
 import akka.actor.ActorRef
 import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
 
 import common.StreamLogging
 
@@ -72,7 +71,6 @@ class RateThrottleTests extends FlatSpec with Matchers with StreamLogging with E
   behavior of "Rate Throttle"
 
   //val loadBalancer = new LoadBalancer
-  implicit val am = ActorMaterializer()
   val config = new WhiskConfig(ExecManifest.requiredProperties)
   def mockMessaging(): MessagingProvider = {
     val messaging = stub[MessagingProvider]

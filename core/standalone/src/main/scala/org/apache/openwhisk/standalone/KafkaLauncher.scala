@@ -20,7 +20,6 @@ package org.apache.openwhisk.standalone
 import java.io.File
 
 import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
 import kafka.server.KafkaConfig
 import net.manub.embeddedkafka.{EmbeddedKafka, EmbeddedKafkaConfig}
 import org.apache.commons.io.FileUtils
@@ -43,7 +42,6 @@ class KafkaLauncher(docker: StandaloneDockerClient,
                     kafkaUi: Boolean)(implicit logging: Logging,
                                       ec: ExecutionContext,
                                       actorSystem: ActorSystem,
-                                      materializer: ActorMaterializer,
                                       tid: TransactionId) {
 
   def run(): Future[Seq[ServiceContainer]] = {
@@ -117,8 +115,7 @@ object KafkaAwareLeanBalancer extends LoadBalancerProvider {
 
   override def instance(whiskConfig: WhiskConfig, instance: ControllerInstanceId)(
     implicit actorSystem: ActorSystem,
-    logging: Logging,
-    materializer: ActorMaterializer): LoadBalancer = LeanBalancer.instance(whiskConfig, instance)
+    logging: Logging): LoadBalancer = LeanBalancer.instance(whiskConfig, instance)
 }
 
 object KafkaLauncher {

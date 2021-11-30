@@ -21,7 +21,6 @@ import akka.actor.ActorSystem
 import akka.http.scaladsl.model.headers._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.directives.{AuthenticationDirective, AuthenticationResult}
-import akka.stream.ActorMaterializer
 import org.apache.openwhisk.common.{Logging, Scheduler, TransactionId}
 import org.apache.openwhisk.core.ConfigKeys
 import org.apache.openwhisk.core.database.NoDocumentException
@@ -47,7 +46,7 @@ object BasicAuthenticationDirective extends AuthenticationDirectiveProvider {
       else {
         logging.info(this, s"controller name: ${sys.env.get("CONTROLLER_NAME").getOrElse("")}")
         logging.info(this, "create blacklist..")
-        val authStore = WhiskAuthStore.datastore()(system, logging, ActorMaterializer())
+        val authStore = WhiskAuthStore.datastore()(system, logging)
         val namespaceBlacklist = new NamespaceBlacklist(authStore)
         if (!sys.env.get("CONTROLLER_NAME").getOrElse("").equals("crudcontroller")) {
           logging.info(this, "create background job to update blacklist..")

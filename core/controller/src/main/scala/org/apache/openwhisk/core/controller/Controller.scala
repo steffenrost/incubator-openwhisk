@@ -23,7 +23,6 @@ import akka.event.Logging.InfoLevel
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.server.Route
-import akka.stream.ActorMaterializer
 import kamon.Kamon
 import pureconfig._
 import pureconfig.generic.auto._
@@ -66,16 +65,15 @@ import scala.util.{Failure, Success}
  *
  * Uses the Akka routing DSL: http://doc.akka.io/docs/akka-http/current/scala/http/routing-dsl/overview.html
  *
- * @param config A set of properties needed to run an instance of the controller service
+ * @param whiskConfig A set of properties needed to run an instance of the controller service
  * @param instance if running in scale-out, a unique identifier for this instance in the group
- * @param verbosity logging verbosity
+ * @param logging logging verbosity
  * @param executionContext Scala runtime support for concurrent operations
  */
 class Controller(val instance: ControllerInstanceId,
                  runtimes: Runtimes,
                  implicit val whiskConfig: WhiskConfig,
                  implicit val actorSystem: ActorSystem,
-                 implicit val materializer: ActorMaterializer,
                  implicit val logging: Logging)
     extends BasicRasService {
 
@@ -120,9 +118,9 @@ class Controller(val instance: ControllerInstanceId,
   private implicit val activationIdFactory = new ActivationIdGenerator {}
   private implicit val logStore = SpiLoader.get[LogStoreProvider].instance(actorSystem)
   private implicit val activationStore =
-    SpiLoader.get[ActivationStoreProvider].instance(actorSystem, materializer, logging)
+    SpiLoader.get[ActivationStoreProvider].instance(actorSystem, logging)
   private implicit val activityTracker: AbstractActivityTracker =
-    new ActivityTracker(actorSystem, materializer, logging)
+    new ActivityTracker(actorSystem, logging)
 
   // Defines the activity tracker instance for BasicHttpService
   BasicHttpService.attachActivityTracker(activityTracker)
@@ -267,15 +265,13 @@ object Controller {
           ExecManifest.runtimesManifest,
           config,
           actorSystem,
-          ActorMaterializer.create(actorSystem),
           logger)
 
         val httpsConfig =
           if (Controller.protocol == "https") Some(loadConfigOrThrow[HttpsConfig]("whisk.controller.https")) else None
 
         BasicHttpService.startHttpService(controller.route, port, httpsConfig, interface)(
-          actorSystem,
-          controller.materializer)
+          actorSystem)
 
       case Failure(t) =>
         abort(s"Invalid runtimes manifest: $t")

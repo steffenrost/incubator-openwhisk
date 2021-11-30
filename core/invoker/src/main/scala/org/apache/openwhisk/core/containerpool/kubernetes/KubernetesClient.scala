@@ -28,7 +28,7 @@ import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.model.Uri.{Path, Query}
 import akka.stream.scaladsl.Source
 import akka.stream.stage._
-import akka.stream.{ActorMaterializer, Attributes, Outlet, SourceShape}
+import akka.stream.{Attributes, Outlet, SourceShape}
 import akka.util.ByteString
 import collection.JavaConverters._
 import io.fabric8.kubernetes.api.model._
@@ -90,7 +90,6 @@ class KubernetesClient(
     extends KubernetesApi
     with ProcessRunner {
   implicit protected val ec = executionContext
-  implicit protected val am = ActorMaterializer()
   implicit protected val kubeRestClient = {
     val configBuilder = new ConfigBuilder()
       .withConnectionTimeout(config.timeouts.logs.toMillis.toInt)

@@ -18,7 +18,6 @@
 package org.apache.openwhisk.core.database.cosmosdb.cache
 
 import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
 import kamon.Kamon
 import org.apache.openwhisk.common.{AkkaLogging, ConfigMXBean, Logging}
 import org.apache.openwhisk.http.{BasicHttpService, BasicRasService}
@@ -26,7 +25,6 @@ import org.apache.openwhisk.http.{BasicHttpService, BasicRasService}
 object Main {
   def main(args: Array[String]): Unit = {
     implicit val system: ActorSystem = ActorSystem("cache-invalidator-actor-system")
-    implicit val materializer: ActorMaterializer = ActorMaterializer()
     implicit val log: Logging = new AkkaLogging(akka.event.Logging.getLogger(system, this))
 
     ConfigMXBean.register()

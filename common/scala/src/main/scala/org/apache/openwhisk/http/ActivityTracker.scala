@@ -24,7 +24,6 @@ import scala.concurrent.duration._
 import spray.json._
 import DefaultJsonProtocol._
 import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
 import akka.http.scaladsl.model.{HttpRequest, HttpResponse}
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 import kamon.Kamon
@@ -56,10 +55,9 @@ import scala.concurrent.{Await, Future}
  * object of BasicHttpService. The Activity Tracker is not (yet) loaded as a SPI.
  *
  * @param actorSystem actor system
- * @param materializer materializer
  * @param logging logging
  */
-abstract class AbstractActivityTracker(actorSystem: ActorSystem, materializer: ActorMaterializer, logging: Logging) {
+abstract class AbstractActivityTracker(actorSystem: ActorSystem, logging: Logging) {
 
   /** requestHandler is called before each request is processed. It collects data that is required for
    * creating activity events. No further processing should be performed in requestHandler. requestHandler
@@ -150,11 +148,10 @@ case class ActivityTrackerConfig(auditLogFilePath: String, auditLogFileNamePrefi
  * or other external components to openwhisk for running ActivityTracker with BasicAuthenticationDirective.
  *
  * @param actorSystem actor system
- * @param materializer materializer
  * @param logging logging
  */
-class ActivityTracker(actorSystem: ActorSystem, materializer: ActorMaterializer, logging: Logging)
-    extends AbstractActivityTracker(actorSystem, materializer, logging)
+class ActivityTracker(actorSystem: ActorSystem, logging: Logging)
+    extends AbstractActivityTracker(actorSystem, logging)
     with ActivityUtils {
 
   private val componentName = Kamon.environment.host.toLowerCase
@@ -175,7 +172,6 @@ class ActivityTracker(actorSystem: ActorSystem, materializer: ActorMaterializer,
         logFilePrefix = auditLogFileNamePrefix,
         logFileMaxSize = auditLogMaxFileSize,
         logPath = Paths.get(auditLogFilePath),
-        actorMaterializer = materializer,
         logging = logging)
     else null
 

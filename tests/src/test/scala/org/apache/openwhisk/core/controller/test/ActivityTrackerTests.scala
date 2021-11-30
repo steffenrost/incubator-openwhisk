@@ -27,7 +27,6 @@ import org.scalatest.{BeforeAndAfterEach, FlatSpecLike, Matchers}
 import org.scalatestplus.junit.JUnitRunner
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpResponse, StatusCodes}
 import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
 import spray.json._
 import DefaultJsonProtocol._
 import common.StreamLogging
@@ -69,7 +68,6 @@ class ActivityTrackerTests()
 
   implicit val actorSystem: ActorSystem = ActorSystem("ActivityTrackerTests")
   implicit val ec: ExecutionContextExecutor = actorSystem.dispatcher
-  implicit val materializer: ActorMaterializer = ActorMaterializer()
 
   val waitTime = 30.seconds
 

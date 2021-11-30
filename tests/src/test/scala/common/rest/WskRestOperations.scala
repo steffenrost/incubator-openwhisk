@@ -31,7 +31,6 @@ import akka.http.scaladsl.model.StatusCodes.{Accepted, NotFound, OK}
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.Uri.{Path, Query}
 import akka.http.scaladsl.model.headers.{Authorization, BasicHttpCredentials, OAuth2BearerToken}
-import akka.stream.ActorMaterializer
 import akka.util.ByteString
 import com.typesafe.sslconfig.akka.AkkaSSLConfig
 import common.TestUtils.{ANY_ERROR_EXIT, DONTCARE_EXIT, RunResult, SUCCESS_EXIT}
@@ -1142,7 +1141,6 @@ trait RunRestCmd extends Matchers with ScalaFutures with SwaggerValidator {
   implicit val config: PatienceConfig = PatienceConfig(100 seconds, 15 milliseconds)
   implicit val actorSystem: ActorSystem
   lazy implicit val executionContext: ExecutionContext = actorSystem.dispatcher
-  lazy implicit val materializer: ActorMaterializer = ActorMaterializer()
 
   lazy val sslConfig: AkkaSSLConfig = AkkaSSLConfig().mapSettings {
     _.withHostnameVerifierClass(classOf[AcceptAllHostNameVerifier].asInstanceOf[Class[HostnameVerifier]])

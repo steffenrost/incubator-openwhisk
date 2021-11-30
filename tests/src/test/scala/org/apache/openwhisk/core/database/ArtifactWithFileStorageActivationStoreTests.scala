@@ -23,7 +23,6 @@ import java.time.Instant
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.model.HttpRequest
-import akka.stream.ActorMaterializer
 import akka.testkit.TestKit
 import common.StreamLogging
 import org.junit.runner.RunWith
@@ -56,7 +55,6 @@ class ArtifactWithFileStorageActivationStoreTests()
   implicit val transid: TransactionId = TransactionId.testing
   implicit val notifier: Option[CacheChangeNotification] = None
 
-  private val materializer = ActorMaterializer()
   private val uuid = UUID()
   private val subject = Subject()
   private val user =
@@ -254,19 +252,17 @@ class ArtifactWithFileStorageActivationStoreTests()
 
       class ArtifactWithFileStorageActivationStoreExtendedTest(
         actorSystem: ActorSystem,
-        actorMaterializer: ActorMaterializer,
         logging: Logging,
         config: ArtifactWithFileStorageActivationStoreConfigExtendedTest =
           loadConfigOrThrow[ArtifactWithFileStorageActivationStoreConfigExtendedTest](
             ConfigKeys.activationStoreWithFileStorage))
-          extends ArtifactActivationStore(actorSystem, actorMaterializer, logging) {
+          extends ArtifactActivationStore(actorSystem, logging) {
 
         private val activationFileStorage =
           new ActivationFileStorage(
             config.logFilePrefix,
             Paths.get(config.logPath),
             config.writeResultToFile,
-            actorMaterializer,
             logging)
 
         def getLogFile = activationFileStorage.getLogFile

@@ -21,7 +21,6 @@ import java.io.File
 import java.nio.charset.StandardCharsets.UTF_8
 
 import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
 import org.apache.commons.io.{FileUtils, IOUtils}
 import org.apache.openwhisk.common.{Logging, TransactionId}
 import org.apache.openwhisk.standalone.StandaloneDockerSupport.{checkOrAllocatePort, containerName, createRunCmd}
@@ -38,7 +37,6 @@ class UserEventLauncher(docker: StandaloneDockerClient,
                         dataDir: File)(implicit logging: Logging,
                                        ec: ExecutionContext,
                                        actorSystem: ActorSystem,
-                                       materializer: ActorMaterializer,
                                        tid: TransactionId) {
 
   //owPort+1 is used by Api Gateway

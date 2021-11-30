@@ -22,7 +22,7 @@ import akka.actor.ActorSystem
 import akka.kafka.scaladsl.Producer
 import akka.kafka.{ProducerMessage, ProducerSettings}
 import akka.stream.scaladsl.{Keep, Sink, Source}
-import akka.stream.{ActorMaterializer, OverflowStrategy, QueueOfferResult}
+import akka.stream.{OverflowStrategy, QueueOfferResult}
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.openwhisk.connector.kafka.KamonMetricsReporter
@@ -33,7 +33,7 @@ import scala.concurrent.{ExecutionContext, Future, Promise}
 case class KafkaEventProducer(
   settings: ProducerSettings[String, String],
   topic: String,
-  eventProducerConfig: EventProducerConfig)(implicit system: ActorSystem, materializer: ActorMaterializer)
+  eventProducerConfig: EventProducerConfig)(implicit system: ActorSystem)
     extends EventProducer {
   private implicit val executionContext: ExecutionContext = system.dispatcher
 

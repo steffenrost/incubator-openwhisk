@@ -19,7 +19,6 @@ package org.apache.openwhisk.core.database.cosmosdb.cache
 import akka.Done
 import akka.actor.CoordinatedShutdown
 import akka.kafka.testkit.scaladsl.{EmbeddedKafkaLike, ScalatestKafkaSpec}
-import akka.stream.ActorMaterializer
 import com.typesafe.config.ConfigFactory
 import common.StreamLogging
 import net.manub.embeddedkafka.{EmbeddedKafka, EmbeddedKafkaConfig}
@@ -55,7 +54,6 @@ class CacheInvalidatorTests
     with TryValues
     with StreamLogging {
 
-  private implicit val materializer: ActorMaterializer = ActorMaterializer()
   implicit override val patienceConfig: PatienceConfig = PatienceConfig(timeout = 300.seconds)
 
   override def createKafkaConfig: EmbeddedKafkaConfig = EmbeddedKafkaConfig(kafkaPort, zooKeeperPort)

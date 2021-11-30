@@ -17,7 +17,6 @@
 
 package org.apache.openwhisk.core.cli.test
 
-import akka.stream.ActorMaterializer
 import org.junit.runner.RunWith
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.junit.JUnitRunner
@@ -48,7 +47,6 @@ abstract class WskEntitlementTests()
     with WskTestHelpers
     with BeforeAndAfterAll {
 
-  private implicit val materializer = ActorMaterializer()
   val wsk: WskOperations
   lazy val defaultWskProps = WskProps()
   lazy val guestWskProps = getAdditionalTestSubject(Subject().asString)

@@ -23,7 +23,6 @@ import java.util.concurrent.atomic.LongAdder
 
 import akka.actor.ActorSystem
 import akka.event.Logging.InfoLevel
-import akka.stream.ActorMaterializer
 import org.apache.kafka.clients.producer.RecordMetadata
 import pureconfig._
 import pureconfig.generic.auto._
@@ -46,7 +45,6 @@ abstract class CommonLoadBalancer(config: WhiskConfig,
                                   feedFactory: FeedFactory,
                                   controllerInstance: ControllerInstanceId)(implicit val actorSystem: ActorSystem,
                                                                             logging: Logging,
-                                                                            materializer: ActorMaterializer,
                                                                             messagingProvider: MessagingProvider)
     extends LoadBalancer {
 

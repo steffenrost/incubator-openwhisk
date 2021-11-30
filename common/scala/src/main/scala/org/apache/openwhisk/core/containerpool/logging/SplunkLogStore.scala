@@ -29,7 +29,6 @@ import akka.http.scaladsl.model.Uri.Path
 import akka.http.scaladsl.model.headers.Authorization
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import akka.http.scaladsl.unmarshalling.Unmarshal
-import akka.stream.ActorMaterializer
 import akka.stream.OverflowStrategy
 import akka.stream.QueueOfferResult
 import akka.stream.scaladsl.Flow
@@ -86,7 +85,6 @@ class SplunkLogStore(
     extends LogDriverLogStore(actorSystem) {
   implicit val as = actorSystem
   implicit val ec = as.dispatcher
-  implicit val materializer = ActorMaterializer()
   private val logging = new AkkaLogging(actorSystem.log)
 
   private val splunkApi = Path / "services" / "search" / "jobs" //see http://docs.splunk.com/Documentation/Splunk/6.6.3/RESTREF/RESTsearch#search.2Fjobs

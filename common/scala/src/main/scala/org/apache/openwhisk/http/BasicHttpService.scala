@@ -26,7 +26,6 @@ import akka.http.scaladsl.model.{HttpRequest, _}
 import akka.http.scaladsl.server.RouteResult.Rejected
 import akka.http.scaladsl.server._
 import akka.http.scaladsl.server.directives._
-import akka.stream.ActorMaterializer
 import kamon.metric.MeasurementUnit
 import spray.json._
 import org.apache.openwhisk.common.Https.HttpsConfig
@@ -186,15 +185,13 @@ object BasicHttpService {
    * Starts an HTTP(S) route handler on given port and registers a shutdown hook.
    */
   def startHttpService(route: Route, port: Int, config: Option[HttpsConfig] = None, interface: String = "0.0.0.0")(
-    implicit actorSystem: ActorSystem,
-    materializer: ActorMaterializer): Unit = {
+    implicit actorSystem: ActorSystem): Unit = {
     val connectionContext = config.map(Https.connectionContext(_)).getOrElse(HttpConnectionContext)
     val httpBinding = Http().bindAndHandle(route, interface, port, connectionContext = connectionContext)
     addShutdownHook(httpBinding)
   }
 
-  def addShutdownHook(binding: Future[Http.ServerBinding])(implicit actorSystem: ActorSystem,
-                                                           materializer: ActorMaterializer): Unit = {
+  def addShutdownHook(binding: Future[Http.ServerBinding])(implicit actorSystem: ActorSystem): Unit = {
     implicit val executionContext = actorSystem.dispatcher
     sys.addShutdownHook {
       Await.result(binding.map(_.unbind()), 30.seconds)

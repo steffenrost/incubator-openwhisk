@@ -26,7 +26,6 @@ import scala.language.postfixOps
 import org.junit.runner.RunWith
 import org.scalatest._
 import org.scalatest.junit.JUnitRunner
-import akka.stream.ActorMaterializer
 import common.StreamLogging
 import common.WskActorSystem
 import org.apache.openwhisk.core.controller.test.WhiskAuthHelpers
@@ -62,8 +61,6 @@ class ViewTests
 
   val creds2 = WhiskAuthHelpers.newAuth(Subject("t12345"))
   val namespace2 = EntityPath(creds2.subject.asString)
-
-  implicit val materializer = ActorMaterializer()
 
   val entityStore = WhiskEntityStore.datastore()
   val activationStore = WhiskActivationStore.datastore()

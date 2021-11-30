@@ -25,7 +25,6 @@ import akka.kafka.ConsumerMessage.CommittableOffsetBatch
 import akka.kafka.scaladsl.Consumer
 import akka.kafka.scaladsl.Consumer.DrainingControl
 import akka.kafka.{ConsumerSettings, Subscriptions}
-import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.{Keep, Sink}
 import javax.management.ObjectName
 import org.apache.kafka.clients.consumer.ConsumerConfig
@@ -48,7 +47,7 @@ trait MetricRecorder {
 
 case class EventConsumer(settings: ConsumerSettings[String, String],
                          recorders: Seq[MetricRecorder],
-                         metricConfig: MetricConfig)(implicit system: ActorSystem, materializer: ActorMaterializer)
+                         metricConfig: MetricConfig)(implicit system: ActorSystem)
     extends KafkaMetricsProvider {
   import EventConsumer._
 

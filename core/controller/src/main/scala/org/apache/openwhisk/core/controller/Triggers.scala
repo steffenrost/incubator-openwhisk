@@ -32,7 +32,6 @@ import akka.http.scaladsl.model.headers.Authorization
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.{RequestContext, RouteResult}
 import akka.http.scaladsl.unmarshalling.{Unmarshal, Unmarshaller}
-import akka.stream.ActorMaterializer
 import spray.json.DefaultJsonProtocol._
 import com.typesafe.sslconfig.akka.AkkaSSLConfig
 import pureconfig._
@@ -95,8 +94,6 @@ trait WhiskTriggersApi extends WhiskCollectionAPI {
   /** Path to Triggers REST API. */
   protected val triggersPath = "triggers"
   protected val url = Uri(s"${controllerProtocol}://localhost:${whiskConfig.servicePort}")
-
-  protected implicit val materializer: ActorMaterializer
 
   import RestApiCommons.emptyEntityToJsObject
 

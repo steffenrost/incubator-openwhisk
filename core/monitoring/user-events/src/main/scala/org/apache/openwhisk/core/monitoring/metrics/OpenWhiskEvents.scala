@@ -21,7 +21,6 @@ import akka.actor.{ActorSystem, CoordinatedShutdown}
 import akka.event.slf4j.SLF4JLogging
 import akka.http.scaladsl.Http
 import akka.kafka.ConsumerSettings
-import akka.stream.ActorMaterializer
 import com.typesafe.config.Config
 import kamon.Kamon
 import kamon.prometheus.PrometheusReporter
@@ -35,8 +34,7 @@ object OpenWhiskEvents extends SLF4JLogging {
 
   case class MetricConfig(port: Int, enableKamon: Boolean, ignoredNamespaces: Set[String])
 
-  def start(config: Config)(implicit system: ActorSystem,
-                            materializer: ActorMaterializer): Future[Http.ServerBinding] = {
+  def start(config: Config)(implicit system: ActorSystem): Future[Http.ServerBinding] = {
     implicit val ec: ExecutionContext = system.dispatcher
 
     val prometheusReporter = new PrometheusReporter()

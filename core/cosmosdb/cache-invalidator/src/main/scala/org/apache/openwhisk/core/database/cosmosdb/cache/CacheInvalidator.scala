@@ -19,7 +19,6 @@ package org.apache.openwhisk.core.database.cosmosdb.cache
 import akka.Done
 import akka.actor.{ActorSystem, CoordinatedShutdown}
 import akka.kafka.ProducerSettings
-import akka.stream.ActorMaterializer
 import com.google.common.base.Throwables
 import com.typesafe.config.Config
 import org.apache.kafka.common.serialization.StringSerializer
@@ -35,7 +34,7 @@ object CacheInvalidator {
   val whisksCollection = "whisks"
 
   def start(
-    globalConfig: Config)(implicit system: ActorSystem, materializer: ActorMaterializer, log: Logging): Future[Done] = {
+    globalConfig: Config)(implicit system: ActorSystem, log: Logging): Future[Done] = {
     implicit val ec: ExecutionContext = system.dispatcher
     val config = CacheInvalidatorConfig(globalConfig)
     val producer =
