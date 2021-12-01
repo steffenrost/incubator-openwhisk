@@ -22,6 +22,7 @@ import java.nio.file.{Files, Path}
 import java.time.Instant
 import java.util.EnumSet
 
+import akka.stream.ActorMaterializer
 import akka.stream.alpakka.file.scaladsl.LogRotatorSink
 import akka.stream.scaladsl.{Flow, MergeHub, RestartSink, Sink, Source}
 import akka.util.ByteString
@@ -36,7 +37,10 @@ import scala.concurrent.duration._
 class ActivationFileStorage(logFilePrefix: String,
                             logPath: Path,
                             writeResultToFile: Boolean,
+                            actorMaterializer: ActorMaterializer,
                             logging: Logging) {
+
+  implicit val materializer = actorMaterializer
 
   private var logFile = logPath
   private val bufferSize = 100.MB

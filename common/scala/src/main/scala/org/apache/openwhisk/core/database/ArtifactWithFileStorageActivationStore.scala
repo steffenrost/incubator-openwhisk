@@ -20,7 +20,7 @@ package org.apache.openwhisk.core.database
 import java.nio.file.Paths
 
 import akka.actor.ActorSystem
-//import akka.stream._
+import akka.stream._
 import org.apache.openwhisk.common.{Logging, TransactionId}
 import org.apache.openwhisk.core.ConfigKeys
 import org.apache.openwhisk.core.entity.{DocInfo, _}
@@ -37,16 +37,18 @@ case class ArtifactWithFileStorageActivationStoreConfig(logFilePrefix: String,
 
 class ArtifactWithFileStorageActivationStore(
   actorSystem: ActorSystem,
+  actorMaterializer: ActorMaterializer,
   logging: Logging,
   config: ArtifactWithFileStorageActivationStoreConfig =
     loadConfigOrThrow[ArtifactWithFileStorageActivationStoreConfig](ConfigKeys.activationStoreWithFileStorage))
-    extends ArtifactActivationStore(actorSystem, logging) {
+    extends ArtifactActivationStore(actorSystem, actorMaterializer, logging) {
 
   private val activationFileStorage =
     new ActivationFileStorage(
       config.logFilePrefix,
       Paths.get(config.logPath),
       config.writeResultToFile,
+      actorMaterializer,
       logging)
 
   def getLogFile = activationFileStorage.getLogFile
@@ -69,6 +71,6 @@ class ArtifactWithFileStorageActivationStore(
 }
 
 object ArtifactWithFileStorageActivationStoreProvider extends ActivationStoreProvider {
-  override def instance(actorSystem: ActorSystem, logging: Logging) =
-    new ArtifactWithFileStorageActivationStore(actorSystem, logging)
+  override def instance(actorSystem: ActorSystem, actorMaterializer: ActorMaterializer, logging: Logging) =
+    new ArtifactWithFileStorageActivationStore(actorSystem, actorMaterializer, logging)
 }
