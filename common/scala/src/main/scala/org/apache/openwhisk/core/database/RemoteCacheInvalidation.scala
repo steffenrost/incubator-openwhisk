@@ -83,9 +83,18 @@ class RemoteCacheInvalidation(config: WhiskConfig, component: String, instance: 
 
   private def removeFromLocalCache(bytes: Array[Byte]): Future[Unit] = Future {
     val raw = new String(bytes, StandardCharsets.UTF_8)
+    //logging.warn(this, s"@StR processing message: $raw")
 
     CacheInvalidationMessage.parse(raw) match {
       case Success(msg: CacheInvalidationMessage) => {
+        logging.warn(
+          this,
+          s"@StR msg: $msg, " +
+            s"actmetasize: ${WhiskActionMetaData.cacheSize}, actmetakeys: ${WhiskActionMetaData.keySet}, " +
+            s"actsize: ${WhiskAction.cacheSize}, actkeys: ${WhiskAction.keySet}, " +
+            s"pkgsize: ${WhiskPackage.cacheSize}, pkgkeys: ${WhiskPackage.keySet}, " +
+            s"rulesize: ${WhiskRule.cacheSize}, rulekeys: ${WhiskRule.keySet}, " +
+            s"trgsize: ${WhiskTrigger.cacheSize}, trgkeys: ${WhiskTrigger.keySet}")
         if (msg.instanceId != instanceId) {
           WhiskActionMetaData.removeId(msg.key)
           WhiskAction.removeId(msg.key)

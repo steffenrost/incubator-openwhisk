@@ -67,6 +67,10 @@ private class ConcurrentMapBackedCache[V](store: ConcurrentMap[Any, Future[V]]) 
   def remove(key: Any) = Option(store.remove(key))
 
   def size = store.size
+  def keySet = store.keySet()
+  def containsKey(key: Any) = store.containsKey(key)
+  def values() = store.values()
+
 }
 
 class ValueMagnet[V](val future: Future[V])

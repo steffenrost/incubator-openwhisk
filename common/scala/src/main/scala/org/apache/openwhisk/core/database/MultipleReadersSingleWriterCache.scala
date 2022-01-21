@@ -303,6 +303,9 @@ trait MultipleReadersSingleWriterCache[W, Winfo] {
   }
 
   def cacheSize: Int = cache.size
+  def keySet = cache.keySet
+  def containsKey(key: Any) = cache.containsKey(key)
+  def values() = cache.values()
 
   /**
    * This method removes an entry from the cache immediately. You can use this method
