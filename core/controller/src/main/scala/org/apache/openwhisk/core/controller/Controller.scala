@@ -46,6 +46,7 @@ import org.apache.openwhisk.spi.SpiLoader
 import scala.concurrent.ExecutionContext.Implicits
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.Await
+import scala.language.reflectiveCalls
 import scala.util.{Failure, Success}
 
 /**
@@ -110,6 +111,21 @@ class Controller(val instance: ControllerInstanceId,
     }
   })
 
+  implicit val executionContext = actorSystem.dispatcher
+  cacheChangeNotification.value.remoteCacheInvalidaton
+    .ensureInitialSequence()
+    .map {
+      case _ =>
+        cacheChangeNotification.value.remoteCacheInvalidaton.scheduleCacheInvalidation
+    }
+    .recoverWith {
+      case t =>
+        logging.error(this, s"failure during remoteCacheInvalidaton.ensureInitialSequence: ${t.getMessage}")
+        actorSystem.terminate()
+        Await.result(actorSystem.whenTerminated, 30.seconds)
+        sys.exit(1)
+    }
+
   // initialize backend services
   private implicit val loadBalancer =
     SpiLoader.get[LoadBalancerProvider].instance(whiskConfig, instance)
@@ -142,7 +158,6 @@ class Controller(val instance: ControllerInstanceId,
    * @return JSON with details of invoker health or count of healthy invokers respectively.
    */
   private val internalInvokerHealth = {
-    implicit val executionContext = actorSystem.dispatcher
     (pathPrefix("invokers") & get) {
       pathEndOrSingleSlash {
         complete {
