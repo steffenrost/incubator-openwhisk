@@ -50,15 +50,18 @@ import org.apache.openwhisk.core.connector.PingMessage
 import org.apache.openwhisk.core.entity.ActivationId.ActivationIdGenerator
 import org.apache.openwhisk.core.entity._
 import org.apache.openwhisk.core.entity.size._
-import org.apache.openwhisk.core.loadBalancer.ActivationRequest
-import org.apache.openwhisk.core.loadBalancer.GetStatus
+import org.apache.openwhisk.core.loadBalancer.{
+  ActivationRequest,
+  GetStatus,
+  InvocationFinishedMessage,
+  InvocationFinishedResult,
+  InvocationFinishedResultWithActivation,
+  InvokerActor,
+  InvokerHealth,
+  InvokerPool,
+  InvokerState
+}
 import org.apache.openwhisk.core.loadBalancer.InvokerState._
-import org.apache.openwhisk.core.loadBalancer.InvocationFinishedResult
-import org.apache.openwhisk.core.loadBalancer.InvocationFinishedMessage
-import org.apache.openwhisk.core.loadBalancer.InvokerActor
-import org.apache.openwhisk.core.loadBalancer.InvokerPool
-import org.apache.openwhisk.core.loadBalancer.InvokerState
-import org.apache.openwhisk.core.loadBalancer.InvokerHealth
 import org.apache.openwhisk.utils.retry
 import org.apache.openwhisk.core.connector.test.TestConnector
 import org.apache.openwhisk.core.entity.ControllerInstanceId
@@ -163,7 +166,10 @@ class InvokerSupervisionTests
       allStates(supervisor) shouldBe zipWithInstance(IndexedSeq(Healthy))
 
       // Send message and expect receive in invoker
-      val msg = InvocationFinishedMessage(invokerInstance, InvocationFinishedResult.Success("aid"))
+      val msg = InvocationFinishedMessage(
+        invokerInstance,
+        new InvocationFinishedResultWithActivation(InvocationFinishedResult.Success, new ActivationIdGenerator {}
+          .make()))
       supervisor ! msg
       invoker.expectMsg(msg)
     }
@@ -239,7 +245,8 @@ class InvokerSupervisionTests
       (1 to InvokerActor.bufferSize).foreach { _ =>
         invoker ! InvocationFinishedMessage(
           InvokerInstanceId(0, userMemory = defaultUserMemory),
-          InvocationFinishedResult.Success("aid"))
+          new InvocationFinishedResultWithActivation(InvocationFinishedResult.Success, new ActivationIdGenerator {}
+            .make()))
       }
       pool.expectMsg(Transition(invoker, Unhealthy, Healthy))
 
@@ -247,7 +254,8 @@ class InvokerSupervisionTests
       (1 to InvokerActor.bufferSize).foreach { _ =>
         invoker ! InvocationFinishedMessage(
           InvokerInstanceId(0, userMemory = defaultUserMemory),
-          InvocationFinishedResult.SystemError("aid"))
+          new InvocationFinishedResultWithActivation(InvocationFinishedResult.Success, new ActivationIdGenerator {}
+            .make()))
       }
       pool.expectMsg(Transition(invoker, Healthy, Unhealthy))
 
@@ -255,7 +263,8 @@ class InvokerSupervisionTests
       (1 to InvokerActor.bufferSize - InvokerActor.bufferErrorTolerance).foreach { _ =>
         invoker ! InvocationFinishedMessage(
           InvokerInstanceId(0, userMemory = defaultUserMemory),
-          InvocationFinishedResult.Success("aid"))
+          new InvocationFinishedResultWithActivation(InvocationFinishedResult.Success, new ActivationIdGenerator {}
+            .make()))
       }
       pool.expectMsg(Transition(invoker, Unhealthy, Healthy))
     }
@@ -275,7 +284,8 @@ class InvokerSupervisionTests
       (1 to InvokerActor.bufferSize).foreach { _ =>
         invoker ! InvocationFinishedMessage(
           InvokerInstanceId(0, userMemory = defaultUserMemory),
-          InvocationFinishedResult.Success("aid"))
+          new InvocationFinishedResultWithActivation(InvocationFinishedResult.Success, new ActivationIdGenerator {}
+            .make()))
       }
       pool.expectMsg(Transition(invoker, Unhealthy, Healthy))
 
@@ -283,7 +293,8 @@ class InvokerSupervisionTests
       (1 to InvokerActor.bufferSize).foreach { _ =>
         invoker ! InvocationFinishedMessage(
           InvokerInstanceId(0, userMemory = defaultUserMemory),
-          InvocationFinishedResult.Timeout("aid"))
+          new InvocationFinishedResultWithActivation(InvocationFinishedResult.Success, new ActivationIdGenerator {}
+            .make()))
       }
       pool.expectMsg(Transition(invoker, Healthy, Unresponsive))
 
@@ -291,7 +302,8 @@ class InvokerSupervisionTests
       (1 to InvokerActor.bufferSize - InvokerActor.bufferErrorTolerance).foreach { _ =>
         invoker ! InvocationFinishedMessage(
           InvokerInstanceId(0, userMemory = defaultUserMemory),
-          InvocationFinishedResult.Success("aid"))
+          new InvocationFinishedResultWithActivation(InvocationFinishedResult.Success, new ActivationIdGenerator {}
+            .make()))
       }
       pool.expectMsg(Transition(invoker, Unresponsive, Healthy))
     }
@@ -328,7 +340,8 @@ class InvokerSupervisionTests
     (1 to InvokerActor.bufferSize - InvokerActor.bufferErrorTolerance).foreach { _ =>
       invoker ! InvocationFinishedMessage(
         InvokerInstanceId(0, userMemory = defaultUserMemory),
-        InvocationFinishedResult.Success("aid"))
+        new InvocationFinishedResultWithActivation(InvocationFinishedResult.Success, new ActivationIdGenerator {}
+          .make()))
     }
     invoker.stateName shouldBe Healthy
 

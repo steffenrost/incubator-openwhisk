@@ -73,7 +73,7 @@ case class SystemError(aid: ActivationId) extends InvocationFinishedResult
 case class Timeout(aid: ActivationId) extends InvocationFinishedResult*/
 
 sealed trait InvocationFinishedResult
-  object InvocationFinishedResult {
+object InvocationFinishedResult {
   // The activation could be successfully executed from the system's point of view. That includes user- and application
   // errors
   case object Success extends InvocationFinishedResult
@@ -83,7 +83,8 @@ sealed trait InvocationFinishedResult
   // The active-ack did not arrive before it timed out
   case object Timeout extends InvocationFinishedResult
 }
-case class InvocationFinishedResultWithActivation(aid: ActivationId) extends InvocationFinishedResult
+case class InvocationFinishedResultWithActivation(result: InvocationFinishedResult, aid: ActivationId) extends InvocationFinishedResult
+//case class InvocationFinishedResultWithActivation(aid: ActivationId) extends InvocationFinishedResult
 
 case class ActivationRequest(msg: ActivationMessage, invoker: InvokerInstanceId)
 case class InvocationFinishedMessage(invokerInstance: InvokerInstanceId, result: InvocationFinishedResultWithActivation)
@@ -415,24 +416,24 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
     // The actions that arrive while the invoker is unhealthy are most likely health actions.
     // It is possible they are normal user actions as well. This can happen if such actions were in the
     // invoker queue or in progress while the invoker's status flipped to Unhealthy.
-    if (result == InvocationFinishedResult.Success && stateName == Unhealthy) {
+    if (result.result == InvocationFinishedResult.Success && stateName == Unhealthy) {
       invokeTestAction()
     }
 
     // Stay in online if the activations was successful.
     // Stay in offline, if an activeAck reaches the controller.
-    if ((stateName == Healthy && result == InvocationFinishedResult.Success) || stateName == Offline) {
+    if ((stateName == Healthy && result.result == InvocationFinishedResult.Success) || stateName == Offline) {
       stay
     } else {
       val entries = buffer.toList
       logging.info(
         this,
         s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, entries: $entries, system errors: ${entries.count(
-          _ == InvocationFinishedResult.SystemError)}, timeouts: ${entries.count(_ == InvocationFinishedResult.Timeout)}")
+          _.result == InvocationFinishedResult.SystemError)}, timeouts: ${entries.count(_.result == InvocationFinishedResult.Timeout)}")
       // Goto Unhealthy or Unresponsive respectively if there are more errors than accepted in buffer, else goto Healthy
-      if (entries.count(_ == InvocationFinishedResult.SystemError) > InvokerActor.bufferErrorTolerance) {
+      if (entries.count(_.result == InvocationFinishedResult.SystemError) > InvokerActor.bufferErrorTolerance) {
         gotoIfNotThere(Unhealthy)
-      } else if (entries.count(_ == InvocationFinishedResult.Timeout) > InvokerActor.bufferErrorTolerance) {
+      } else if (entries.count(_.result == InvocationFinishedResult.Timeout) > InvokerActor.bufferErrorTolerance) {
         gotoIfNotThere(Unresponsive)
       } else {
         logging.info(this, s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, gotoIfNotThere(Healthy)")
