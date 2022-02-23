@@ -227,7 +227,9 @@ object InvokerPool {
     WhiskAction
       .get(db, action.docid)
       .flatMap { oldAction =>
-        WhiskAction.put(db, action.revision(oldAction.rev), Some(oldAction))(tid, notifier = None)
+        logging.info(this, s"@StR test action for invoker health already exists: ${oldAction.docid}, ${oldAction.rev}")
+        WhiskAction.get(db, action.docid)
+      //WhiskAction.put(db, action.revision(oldAction.rev), Some(oldAction))(tid, notifier = None)
       }
       .recover {
         case _: NoDocumentException => WhiskAction.put(db, action, old = None)(tid, notifier = None)
@@ -326,6 +328,9 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
     case Event(p: PingMessage, _) if p.isBlacklisted  => goto(Offline)
     case Event(StateTimeout, _)                       => goto(Offline)
     case Event(Tick, _) =>
+      logging.info(
+        this,
+        s"@StR case Event(Tick, _) =>, invokerInstance: $invokerInstance, stateName: $stateName, stateData: ${stateData.buffer.toList}")
       invokeTestAction()
       stay
   }
@@ -364,10 +369,17 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
 
   // To be used for all states that should send test actions to reverify the invoker
   def healthPingingTransitionHandler(state: InvokerState): TransitionHandler = {
-    case _ -> `state` =>
+    case oldstate -> `state` =>
+      logging.info(
+        this,
+        s"@StR healthPingingTransitionHandler, invokerInstance: $invokerInstance, to $state from $oldstate, stateName: $stateName, stateData: ${stateData.buffer.toList}")
       invokeTestAction()
       setTimer(InvokerActor.timerName, Tick, 1.minute, repeat = true)
-    case `state` -> _ => cancelTimer(InvokerActor.timerName)
+    case `state` -> newstate =>
+      logging.info(
+        this,
+        s"@StR healthPingingTransitionHandler, invokerInstance: $invokerInstance, from $state to $newstate, stateName: $stateName, stateData: ${stateData.buffer.toList}")
+      cancelTimer(InvokerActor.timerName)
   }
 
   onTransition(healthPingingTransitionHandler(Unhealthy))
@@ -384,7 +396,11 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
    */
   private def handleCompletionMessage(result: InvocationFinishedResult,
                                       buffer: RingBuffer[InvocationFinishedResult]) = {
+    logging.info(
+      this,
+      s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, result: $result, buffer: ${buffer.toList}")
     buffer.add(result)
+    logging.info(this, s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, buffer: ${buffer.toList}")
 
     // If the action is successful it seems like the Invoker is Healthy again. So we execute immediately
     // a new test action to remove the errors out of the RingBuffer as fast as possible.
@@ -401,12 +417,17 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
       stay
     } else {
       val entries = buffer.toList
+      logging.info(
+        this,
+        s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, entries: $entries, system errors: ${entries.count(
+          _ == InvocationFinishedResult.SystemError)}, timeouts: ${entries.count(_ == InvocationFinishedResult.Timeout)}")
       // Goto Unhealthy or Unresponsive respectively if there are more errors than accepted in buffer, else goto Healthy
       if (entries.count(_ == InvocationFinishedResult.SystemError) > InvokerActor.bufferErrorTolerance) {
         gotoIfNotThere(Unhealthy)
       } else if (entries.count(_ == InvocationFinishedResult.Timeout) > InvokerActor.bufferErrorTolerance) {
         gotoIfNotThere(Unresponsive)
       } else {
+        logging.info(this, s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, gotoIfNotThere(Healthy)")
         gotoIfNotThere(Healthy)
       }
     }
