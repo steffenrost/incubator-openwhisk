@@ -264,14 +264,14 @@ abstract class CommonLoadBalancer(config: WhiskConfig,
                                                 invoker: InvokerInstanceId): Unit = {
 
     val invocationResult = if (forced) {
-      InvocationFinishedResult.Timeout
+      new InvocationFinishedResultWithActivation(InvocationFinishedResult.Timeout(aid))
     } else {
       // If the response contains a system error, report that, otherwise report Success
       // Left generally is considered a Success, since that could be a message not fitting into Kafka
       if (isSystemError) {
-        InvocationFinishedResult.SystemError
+        new InvocationFinishedResultWithActivation(InvocationFinishedResult.SystemError(aid))
       } else {
-        InvocationFinishedResult.Success
+        new InvocationFinishedResultWithActivation(InvocationFinishedResult.Success(aid))
       }
     }
 

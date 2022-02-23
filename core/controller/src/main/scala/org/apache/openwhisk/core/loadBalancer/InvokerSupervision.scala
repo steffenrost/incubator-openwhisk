@@ -66,25 +66,33 @@ object InvokerState {
 }
 
 // Possible answers of an activation
+/*sealed trait InvocationFinishedResult
+case class InvocationFinishedResult(aid: ActivationId) extends InvocationFinishedResult
+case class Success(aid: ActivationId) extends InvocationFinishedResult
+case class SystemError(aid: ActivationId) extends InvocationFinishedResult
+case class Timeout(aid: ActivationId) extends InvocationFinishedResult*/
+
 sealed trait InvocationFinishedResult
-object InvocationFinishedResult {
+  object InvocationFinishedResult {
   // The activation could be successfully executed from the system's point of view. That includes user- and application
   // errors
   case object Success extends InvocationFinishedResult
+  //case object Success extends InvocationFinishedResult
   // The activation could not be executed because of a system error
   case object SystemError extends InvocationFinishedResult
   // The active-ack did not arrive before it timed out
   case object Timeout extends InvocationFinishedResult
 }
+case class InvocationFinishedResultWithActivation(aid: ActivationId) extends InvocationFinishedResult
 
 case class ActivationRequest(msg: ActivationMessage, invoker: InvokerInstanceId)
-case class InvocationFinishedMessage(invokerInstance: InvokerInstanceId, result: InvocationFinishedResult)
+case class InvocationFinishedMessage(invokerInstance: InvokerInstanceId, result: InvocationFinishedResultWithActivation)
 
 // Sent to a monitor if the state changed
 case class CurrentInvokerPoolState(newState: IndexedSeq[InvokerHealth])
 
 // Data stored in the Invoker
-final case class InvokerInfo(buffer: RingBuffer[InvocationFinishedResult])
+final case class InvokerInfo(buffer: RingBuffer[InvocationFinishedResultWithActivation])
 
 /**
  * Actor representing a pool of invokers
@@ -313,7 +321,7 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
   override def receive: Receive = customReceive.orElse(super.receive)
 
   /** Always start UnHealthy. Then the invoker receives some test activations and becomes Healthy. */
-  startWith(Unhealthy, InvokerInfo(new RingBuffer[InvocationFinishedResult](InvokerActor.bufferSize)))
+  startWith(Unhealthy, InvokerInfo(new RingBuffer[InvocationFinishedResultWithActivation](InvokerActor.bufferSize)))
 
   /** An Offline invoker represents an existing but broken invoker. This means, that it does not send pings anymore. */
   when(Offline) {
@@ -394,8 +402,8 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
    * @param result: result of Activation
    * @param buffer to be used
    */
-  private def handleCompletionMessage(result: InvocationFinishedResult,
-                                      buffer: RingBuffer[InvocationFinishedResult]) = {
+  private def handleCompletionMessage(result: InvocationFinishedResultWithActivation,
+                                      buffer: RingBuffer[InvocationFinishedResultWithActivation]) = {
     logging.info(
       this,
       s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, result: $result, buffer: ${buffer.toList}")

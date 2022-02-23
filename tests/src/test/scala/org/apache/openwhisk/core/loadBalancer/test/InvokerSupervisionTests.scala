@@ -163,7 +163,7 @@ class InvokerSupervisionTests
       allStates(supervisor) shouldBe zipWithInstance(IndexedSeq(Healthy))
 
       // Send message and expect receive in invoker
-      val msg = InvocationFinishedMessage(invokerInstance, InvocationFinishedResult.Success)
+      val msg = InvocationFinishedMessage(invokerInstance, InvocationFinishedResult.Success("aid"))
       supervisor ! msg
       invoker.expectMsg(msg)
     }
@@ -239,7 +239,7 @@ class InvokerSupervisionTests
       (1 to InvokerActor.bufferSize).foreach { _ =>
         invoker ! InvocationFinishedMessage(
           InvokerInstanceId(0, userMemory = defaultUserMemory),
-          InvocationFinishedResult.Success)
+          InvocationFinishedResult.Success("aid"))
       }
       pool.expectMsg(Transition(invoker, Unhealthy, Healthy))
 
@@ -247,7 +247,7 @@ class InvokerSupervisionTests
       (1 to InvokerActor.bufferSize).foreach { _ =>
         invoker ! InvocationFinishedMessage(
           InvokerInstanceId(0, userMemory = defaultUserMemory),
-          InvocationFinishedResult.SystemError)
+          InvocationFinishedResult.SystemError("aid"))
       }
       pool.expectMsg(Transition(invoker, Healthy, Unhealthy))
 
@@ -255,7 +255,7 @@ class InvokerSupervisionTests
       (1 to InvokerActor.bufferSize - InvokerActor.bufferErrorTolerance).foreach { _ =>
         invoker ! InvocationFinishedMessage(
           InvokerInstanceId(0, userMemory = defaultUserMemory),
-          InvocationFinishedResult.Success)
+          InvocationFinishedResult.Success("aid"))
       }
       pool.expectMsg(Transition(invoker, Unhealthy, Healthy))
     }
@@ -275,7 +275,7 @@ class InvokerSupervisionTests
       (1 to InvokerActor.bufferSize).foreach { _ =>
         invoker ! InvocationFinishedMessage(
           InvokerInstanceId(0, userMemory = defaultUserMemory),
-          InvocationFinishedResult.Success)
+          InvocationFinishedResult.Success("aid"))
       }
       pool.expectMsg(Transition(invoker, Unhealthy, Healthy))
 
@@ -283,7 +283,7 @@ class InvokerSupervisionTests
       (1 to InvokerActor.bufferSize).foreach { _ =>
         invoker ! InvocationFinishedMessage(
           InvokerInstanceId(0, userMemory = defaultUserMemory),
-          InvocationFinishedResult.Timeout)
+          InvocationFinishedResult.Timeout("aid"))
       }
       pool.expectMsg(Transition(invoker, Healthy, Unresponsive))
 
@@ -291,7 +291,7 @@ class InvokerSupervisionTests
       (1 to InvokerActor.bufferSize - InvokerActor.bufferErrorTolerance).foreach { _ =>
         invoker ! InvocationFinishedMessage(
           InvokerInstanceId(0, userMemory = defaultUserMemory),
-          InvocationFinishedResult.Success)
+          InvocationFinishedResult.Success("aid"))
       }
       pool.expectMsg(Transition(invoker, Unresponsive, Healthy))
     }
@@ -328,7 +328,7 @@ class InvokerSupervisionTests
     (1 to InvokerActor.bufferSize - InvokerActor.bufferErrorTolerance).foreach { _ =>
       invoker ! InvocationFinishedMessage(
         InvokerInstanceId(0, userMemory = defaultUserMemory),
-        InvocationFinishedResult.Success)
+        InvocationFinishedResult.Success("aid"))
     }
     invoker.stateName shouldBe Healthy
 
