@@ -38,7 +38,7 @@ import scala.util.{Failure, Success, Try}
 protected[openwhisk] case class ActivationId private (val asString: String) extends AnyVal {
   override def toString: String = asString
   def toJsObject: JsObject = JsObject("activationId" -> asString.toJson)
-  def isHealth: Boolean = asString.startsWith("0_") || asString.startsWith("1_")
+  def isHealth: Boolean = asString.startsWith("0-") || asString.startsWith("1-")
 }
 
 protected[core] object ActivationId {
@@ -50,6 +50,7 @@ protected[core] object ActivationId {
 
   /** Checks if the current character is hexadecimal */
   private def isHexadecimal(c: Char) = c.isDigit || c == 'a' || c == 'b' || c == 'c' || c == 'd' || c == 'e' || c == 'f'
+  private def isHealth(id: String): Boolean = id.startsWith("0-") || id.startsWith("1-")
 
   /**
    * Parses an activation id from a string.
@@ -59,10 +60,10 @@ protected[core] object ActivationId {
    */
   def parse(id: String): Try[ActivationId] = {
     val length = id.length
-    if (length != 32) {
+    if (!isHealth(id) && length != 32) {
       Failure(
-        new IllegalArgumentException(Messages.activationIdLengthError(SizeError("Activation id", length.B, 32.B))))
-    } else if (!id.forall(isHexadecimal)) {
+        new IllegalArgumentException(Messages.activationIdLengthError(SizeError(s"Activation id($id)", length.B, 32.B))))
+    } else if (!isHealth(id) && !id.forall(isHexadecimal)) {
       Failure(new IllegalArgumentException(Messages.activationIdIllegal))
     } else {
       Success(new ActivationId(id))

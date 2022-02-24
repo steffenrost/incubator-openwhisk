@@ -455,7 +455,7 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
     if (result.result == InvocationFinishedResult.Success && stateName == Unhealthy) {
 
       val nidx =
-        if (ishealth && hidx == cidx && cidx < InvokerActor.countHealthActions) cidx + 1 else cidx
+        if (ishealth && hidx == cidx && cidx < InvokerActor.countHealthActions - 1) cidx + 1 else cidx
       if (nidx > cidx) health.add(nidx)
       logging.info(
         this,
@@ -471,10 +471,10 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
       val entries = buffer.toList
       logging.info(
         this,
-        s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, entries: $entries, healt system errors: ${entries
+        s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, entries: $entries, health system errors: ${entries
           .count((r => r.aid.isHealth && r.result == InvocationFinishedResult.SystemError))}, health timeout: ${entries
           .count((r => r.aid.isHealth && r.result == InvocationFinishedResult.Timeout))}, count last health action: ${entries
-          .count(_.aid.asString.startsWith("1_"))}, system errors: ${entries
+          .count(_.aid.asString.startsWith("1-"))}, system errors: ${entries
           .count(_.result == InvocationFinishedResult.SystemError)}, timeouts: ${entries.count(
           _.result == InvocationFinishedResult.Timeout)}")
 
@@ -489,7 +489,7 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
         gotoIfNotThere(Unhealthy)
       } else if (entries.count(_.result == InvocationFinishedResult.Timeout) > InvokerActor.bufferErrorTolerance) {
         gotoIfNotThere(Unresponsive)
-      } else if (entries.count(_.aid.asString.startsWith("1_")) > 0) {
+      } else if (entries.count(_.aid.asString.startsWith("1-")) > 0) {
         logging.info(this, s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, gotoIfNotThere(Healthy)")
         gotoIfNotThere(Healthy)
       } else stay()
@@ -515,6 +515,8 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
         blocking = false,
         content = None,
         initArgs = Set.empty)
+      logging
+        .info(this, s"@StR invokeTestAction invokerInstance: $invokerInstance, activationMessage: ${activationMessage}")
 
       context.parent ! ActivationRequest(activationMessage, invokerInstance)
     }
@@ -534,6 +536,10 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
         blocking = false,
         content = None,
         initArgs = Set.empty)
+
+      logging.info(
+        this,
+        s"@StR invokeTestAction2 invokerInstance: $invokerInstance, activationMessage: ${activationMessage}")
 
       context.parent ! ActivationRequest(activationMessage, invokerInstance)
     }
