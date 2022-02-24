@@ -38,12 +38,14 @@ import scala.util.{Failure, Success, Try}
 protected[openwhisk] case class ActivationId private (val asString: String) extends AnyVal {
   override def toString: String = asString
   def toJsObject: JsObject = JsObject("activationId" -> asString.toJson)
+  def isHealth: Boolean = asString.startsWith("0_") || asString.startsWith("1_")
 }
 
 protected[core] object ActivationId {
 
   protected[core] trait ActivationIdGenerator {
     def make(): ActivationId = ActivationId.generate()
+    def make4health(i: Int): ActivationId = ActivationId.generate2(i)
   }
 
   /** Checks if the current character is hexadecimal */
@@ -75,6 +77,7 @@ protected[core] object ActivationId {
    * @return new ActivationId
    */
   protected[core] def generate(): ActivationId = new ActivationId(UUIDs.randomUUID().toString.filterNot(_ == '-'))
+  protected[core] def generate2(i: Int): ActivationId = new ActivationId(i + "-" + UUIDs.randomUUID().toString.filterNot(_ == '-'))
 
   protected[core] implicit val serdes: RootJsonFormat[ActivationId] = new RootJsonFormat[ActivationId] {
     def write(d: ActivationId) = JsString(d.toString)

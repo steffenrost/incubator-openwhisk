@@ -83,7 +83,8 @@ object InvocationFinishedResult {
   // The active-ack did not arrive before it timed out
   case object Timeout extends InvocationFinishedResult
 }
-case class InvocationFinishedResultWithActivation(result: InvocationFinishedResult, aid: ActivationId) extends InvocationFinishedResult
+case class InvocationFinishedResultWithActivation(result: InvocationFinishedResult, aid: ActivationId)
+    extends InvocationFinishedResult
 //case class InvocationFinishedResultWithActivation(aid: ActivationId) extends InvocationFinishedResult
 
 case class ActivationRequest(msg: ActivationMessage, invoker: InvokerInstanceId)
@@ -93,7 +94,7 @@ case class InvocationFinishedMessage(invokerInstance: InvokerInstanceId, result:
 case class CurrentInvokerPoolState(newState: IndexedSeq[InvokerHealth])
 
 // Data stored in the Invoker
-final case class InvokerInfo(buffer: RingBuffer[InvocationFinishedResultWithActivation])
+final case class InvokerInfo(buffer: RingBuffer[InvocationFinishedResultWithActivation], health: RingBuffer[Int])
 
 /**
  * Actor representing a pool of invokers
@@ -270,6 +271,18 @@ object InvokerPool {
         throw new IllegalStateException(
           "cannot create test action for invoker health because runtime manifest is not valid")
       }
+    InvokerPool
+      .healthAction2(controllerInstance)
+      .map {
+        // Await the creation of the test action; on failure, this will abort the constructor which should
+        // in turn abort the startup of the controller.
+        a =>
+          Await.result(createTestActionForInvokerHealth(entityStore, a), 1.minute)
+      }
+      .orElse {
+        throw new IllegalStateException(
+          "cannot create test action 2 for invoker health because runtime manifest is not valid")
+      }
   }
 
   def props(f: (ActorRefFactory, InvokerInstanceId) => ActorRef,
@@ -293,6 +306,16 @@ object InvokerPool {
         namespace = healthActionIdentity.namespace.name.toPath,
         name = EntityName(s"invokerHealthTestAction${i.asString}"),
         exec = CodeExecAsString(manifest, """function main(params) { return params; }""", None),
+        limits = ActionLimits(memory = MemoryLimit(MemoryLimit.MIN_MEMORY)))
+    }
+
+  /** An action to use for monitoring invoker health. */
+  def healthAction2(i: ControllerInstanceId): Option[WhiskAction] =
+    ExecManifest.runtimesManifest.resolveDefaultRuntime("python:default").map { manifest =>
+      new WhiskAction(
+        namespace = healthActionIdentity.namespace.name.toPath,
+        name = EntityName(s"invokerHealthTestActionPy${i.asString}"),
+        exec = CodeExecAsString(manifest, """def main(parm): return parm""", None),
         limits = ActionLimits(memory = MemoryLimit(MemoryLimit.MIN_MEMORY)))
     }
 }
@@ -322,7 +345,11 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
   override def receive: Receive = customReceive.orElse(super.receive)
 
   /** Always start UnHealthy. Then the invoker receives some test activations and becomes Healthy. */
-  startWith(Unhealthy, InvokerInfo(new RingBuffer[InvocationFinishedResultWithActivation](InvokerActor.bufferSize)))
+  startWith(
+    Unhealthy,
+    InvokerInfo(
+      new RingBuffer[InvocationFinishedResultWithActivation](InvokerActor.bufferSize),
+      new RingBuffer[Int](1)))
 
   /** An Offline invoker represents an existing but broken invoker. This means, that it does not send pings anymore. */
   when(Offline) {
@@ -339,8 +366,8 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
     case Event(Tick, _) =>
       logging.info(
         this,
-        s"@StR case Event(Tick, _) =>, invokerInstance: $invokerInstance, stateName: $stateName, stateData: ${stateData.buffer.toList}")
-      invokeTestAction()
+        s"@StR case Event(Tick, _) =>, invokerInstance: $invokerInstance, stateName: $stateName, stateData.buffer: ${stateData.buffer.toList}, stateData.health: ${stateData.health.toList}")
+      if (stateData.health.toList.contains(0)) invokeTestAction() else invokeTestAction2()
       stay
   }
 
@@ -362,7 +389,7 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
 
   /** Handle the completion of an Activation in every state. */
   whenUnhandled {
-    case Event(cm: InvocationFinishedMessage, info) => handleCompletionMessage(cm.result, info.buffer)
+    case Event(cm: InvocationFinishedMessage, info) => handleCompletionMessage(cm.result, info.buffer, info.health)
   }
 
   /** Logging on Transition change */
@@ -381,13 +408,14 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
     case oldstate -> `state` =>
       logging.info(
         this,
-        s"@StR healthPingingTransitionHandler, invokerInstance: $invokerInstance, to $state from $oldstate, stateName: $stateName, stateData: ${stateData.buffer.toList}")
+        s"@StR healthPingingTransitionHandler, invokerInstance: $invokerInstance, to $state from $oldstate, stateName: $stateName, stateData.buffer: ${stateData.buffer.toList}, stateData.health: ${stateData.health.toList}")
+      stateData.health.add(0) // start with first health action
       invokeTestAction()
       setTimer(InvokerActor.timerName, Tick, 1.minute, repeat = true)
     case `state` -> newstate =>
       logging.info(
         this,
-        s"@StR healthPingingTransitionHandler, invokerInstance: $invokerInstance, from $state to $newstate, stateName: $stateName, stateData: ${stateData.buffer.toList}")
+        s"@StR healthPingingTransitionHandler, invokerInstance: $invokerInstance, from $state to $newstate, stateName: $stateName, stateData.buffer: ${stateData.buffer.toList}, stateData.health: ${stateData.health.toList}")
       cancelTimer(InvokerActor.timerName)
   }
 
@@ -404,20 +432,35 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
    * @param buffer to be used
    */
   private def handleCompletionMessage(result: InvocationFinishedResultWithActivation,
-                                      buffer: RingBuffer[InvocationFinishedResultWithActivation]) = {
+                                      buffer: RingBuffer[InvocationFinishedResultWithActivation],
+                                      health: RingBuffer[Int]) = {
+
+    val ishealth = result.aid.isHealth
+    val hidx = if (ishealth) result.aid.asString.substring(0, 1).toInt else -1
+    val cidx = health.toList.head
     logging.info(
       this,
-      s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, result: $result, buffer: ${buffer.toList}")
+      s"@StR handleCompletionMessage, ishealth: $ishealth, hidx: $hidx, cidx: $cidx, invokerInstance: $invokerInstance, result: $result, buffer: ${buffer.toList}")
     buffer.add(result)
-    logging.info(this, s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, buffer: ${buffer.toList}")
+    logging.info(
+      this,
+      s"@StR handleCompletionMessage, ishealth: $ishealth, hidx: $hidx, cidx: $cidx, invokerInstance: $invokerInstance, buffer: ${buffer.toList}")
 
     // If the action is successful it seems like the Invoker is Healthy again. So we execute immediately
     // a new test action to remove the errors out of the RingBuffer as fast as possible.
     // The actions that arrive while the invoker is unhealthy are most likely health actions.
     // It is possible they are normal user actions as well. This can happen if such actions were in the
     // invoker queue or in progress while the invoker's status flipped to Unhealthy.
+
     if (result.result == InvocationFinishedResult.Success && stateName == Unhealthy) {
-      invokeTestAction()
+
+      val nidx =
+        if (ishealth && hidx == cidx && cidx < InvokerActor.countHealthActions) cidx + 1 else cidx
+      if (nidx > cidx) health.add(nidx)
+      logging.info(
+        this,
+        s"@StR handleCompletionMessage, ishealth: $ishealth, hidx: $hidx, cidx: $cidx, nidx: $nidx, health: ${health.toList}")
+      if (nidx == 0) invokeTestAction() else invokeTestAction2()
     }
 
     // Stay in online if the activations was successful.
@@ -428,17 +471,28 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
       val entries = buffer.toList
       logging.info(
         this,
-        s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, entries: $entries, system errors: ${entries.count(
-          _.result == InvocationFinishedResult.SystemError)}, timeouts: ${entries.count(_.result == InvocationFinishedResult.Timeout)}")
+        s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, entries: $entries, healt system errors: ${entries
+          .count((r => r.aid.isHealth && r.result == InvocationFinishedResult.SystemError))}, health timeout: ${entries
+          .count((r => r.aid.isHealth && r.result == InvocationFinishedResult.Timeout))}, count last health action: ${entries
+          .count(_.aid.asString.startsWith("1_"))}, system errors: ${entries
+          .count(_.result == InvocationFinishedResult.SystemError)}, timeouts: ${entries.count(
+          _.result == InvocationFinishedResult.Timeout)}")
+
+      // Goto Unhealthy or Unresponsive respectively if there are errors on health actions in buffer
+      if (entries.count((r => r.aid.isHealth && r.result == InvocationFinishedResult.SystemError)) > 0) {
+        gotoIfNotThere(Unhealthy)
+      } else if (entries.count((r => r.aid.isHealth && r.result == InvocationFinishedResult.Timeout)) > 0) {
+        gotoIfNotThere(Unresponsive)
+      } else
       // Goto Unhealthy or Unresponsive respectively if there are more errors than accepted in buffer, else goto Healthy
       if (entries.count(_.result == InvocationFinishedResult.SystemError) > InvokerActor.bufferErrorTolerance) {
         gotoIfNotThere(Unhealthy)
       } else if (entries.count(_.result == InvocationFinishedResult.Timeout) > InvokerActor.bufferErrorTolerance) {
         gotoIfNotThere(Unresponsive)
-      } else {
+      } else if (entries.count(_.aid.asString.startsWith("1_")) > 0) {
         logging.info(this, s"@StR handleCompletionMessage, invokerInstance: $invokerInstance, gotoIfNotThere(Healthy)")
         gotoIfNotThere(Healthy)
-      }
+      } else stay()
     }
   }
 
@@ -456,7 +510,26 @@ class InvokerActor(invokerInstance: InvokerInstanceId, controllerInstance: Contr
         revision = DocRevision.empty,
         user = InvokerPool.healthActionIdentity,
         // Create a new Activation ID for this activation
-        activationId = new ActivationIdGenerator {}.make(),
+        activationId = new ActivationIdGenerator {}.make4health(0),
+        rootControllerIndex = controllerInstance,
+        blocking = false,
+        content = None,
+        initArgs = Set.empty)
+
+      context.parent ! ActivationRequest(activationMessage, invokerInstance)
+    }
+  }
+  private def invokeTestAction2() = {
+    InvokerPool.healthAction2(controllerInstance).map { action =>
+      val activationMessage = ActivationMessage(
+        // Use the sid of the InvokerSupervisor as tid
+        transid = transid,
+        action = action.fullyQualifiedName(true),
+        // Use empty DocRevision to force the invoker to pull the action from db all the time
+        revision = DocRevision.empty,
+        user = InvokerPool.healthActionIdentity,
+        // Create a new Activation ID for this activation
+        activationId = new ActivationIdGenerator {}.make4health(1),
         rootControllerIndex = controllerInstance,
         blocking = false,
         content = None,
@@ -482,6 +555,8 @@ object InvokerActor {
 
   val bufferSize = 10
   val bufferErrorTolerance = 3
+
+  val countHealthActions = 2
 
   val timerName = "testActionTimer"
 }
