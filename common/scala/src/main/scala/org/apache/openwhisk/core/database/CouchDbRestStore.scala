@@ -88,7 +88,8 @@ class CouchDbRestStore[DocumentAbstraction <: DocumentSerializer](dbProtocol: St
     val docinfoStr = s"id: $id, rev: ${rev.getOrElse("null")}"
     val start = transid.started(this, LoggingMarkers.DATABASE_SAVE, s"[PUT] '$dbName' saving document: '${docinfoStr}'")
 
-    val f = if (useBatching) {
+    val f = if (useBatching && (rev.isEmpty || !client.useFlexActivationsLogic)) {
+      // for activations db use batching only for creation of new documents to allow look back in previous db
       batcher.put(asJson).map { e =>
         e match {
           case Right(response) =>
@@ -328,7 +329,7 @@ class CouchDbRestStore[DocumentAbstraction <: DocumentSerializer](dbProtocol: St
     val start = transid.started(this, LoggingMarkers.DATABASE_QUERY, s"[COUNT] '$dbName' searching '$table")
 
     val f = client
-      .executeView(firstPart, secondPart)(startKey = startKey, endKey = endKey, stale = stale, reduce = true)
+      .executeViewForCount(firstPart, secondPart)(startKey = startKey, endKey = endKey, stale = stale)
       .map {
         case Right(response) =>
           val rows = response.fields("rows").convertTo[List[JsObject]]
