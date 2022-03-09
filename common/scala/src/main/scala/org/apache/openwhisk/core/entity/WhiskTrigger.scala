@@ -119,7 +119,7 @@ object WhiskTrigger
   private implicit val fqnSerdesAsDocId = FullyQualifiedEntityName.serdesAsDocId
   override implicit val serdes = jsonFormat9(WhiskTrigger.apply)
 
-  override val cacheEnabled = true
+  override val cacheEnabled = false
 }
 
 object WhiskTriggerPut extends DefaultJsonProtocol {
