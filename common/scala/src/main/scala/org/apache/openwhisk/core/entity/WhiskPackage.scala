@@ -205,7 +205,7 @@ object WhiskPackage
     jsonFormat8(WhiskPackage.apply)
   }
 
-  override val cacheEnabled = false
+  override val cacheEnabled = true
 
   lazy val publicPackagesView: View = WhiskQueries.entitiesView(collection = s"$collectionName-public")
 }
