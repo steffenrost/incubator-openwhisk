@@ -29,7 +29,7 @@ import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 import spray.json._
 import spray.json.DefaultJsonProtocol._
-import org.apache.openwhisk.common.TransactionId
+import org.apache.openwhisk.common.{Logging, PrintStreamLogging, TransactionId}
 import org.apache.openwhisk.core.database.ArtifactStore
 import org.apache.openwhisk.core.database.DocumentFactory
 import org.apache.openwhisk.core.database.CacheChangeNotification
@@ -346,13 +346,19 @@ case class ExecutableWhiskActionMetaData(namespace: EntityPath,
 }
 
 object WhiskAction extends DocumentFactory[WhiskAction] with WhiskEntityQueries[WhiskAction] with DefaultJsonProtocol {
+
   import WhiskActivation.instantSerdes
 
   val execFieldName = "exec"
   val requireWhiskAuthHeader = "x-require-whisk-auth"
 
   override val collectionName = "actions"
-  override val cacheEnabled = true
+  override val cacheEnabled = useCache
+
+  implicit val logging: Logging = new PrintStreamLogging()
+  logging.info(
+    this,
+    s"isController: $isController, cacheInvalidationEnabled: $cacheInvalidationEnabled, useCache: $useCache, cacheChangeNotificationEnabled: $cacheChangeNotificationEnabled")
 
   override implicit val serdes = jsonFormat(
     WhiskAction.apply,
@@ -445,6 +451,7 @@ object WhiskAction extends DocumentFactory[WhiskAction] with WhiskEntityQueries[
         name == attached.attachmentName,
         s"Attachment name '${attached.attachmentName}' does not match the expected name '$name'")
     }
+
     val eu = action.exec match {
       case exec @ CodeExecAsAttachment(_, Attached(attachmentName, _, _, _), _, _) =>
         checkName(attachmentName)
@@ -555,7 +562,12 @@ object WhiskActionMetaData
   import WhiskActivation.instantSerdes
 
   override val collectionName = "actions"
-  override val cacheEnabled = true
+  override val cacheEnabled = useCache
+
+  implicit val logging: Logging = new PrintStreamLogging()
+  logging.info(
+    this,
+    s"isController: $isController, cacheInvalidationEnabled: $cacheInvalidationEnabled, useCache: $useCache, cacheChangeNotificationEnabled: $cacheChangeNotificationEnabled")
 
   override implicit val serdes = jsonFormat(
     WhiskActionMetaData.apply,
