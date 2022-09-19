@@ -165,6 +165,8 @@ class InvokerReactive(
   private val rootfspecentlow = fspecentmax - 3
   private var logsfspcent = -1
 
+  private val poolState = new ContainerPoolState
+
   Scheduler.scheduleWaitAtMost(loadConfigOrThrow[NamespaceBlacklistConfig](ConfigKeys.blacklist).pollInterval) { () =>
     logging.debug(this, "running background job to update blacklist")
 
@@ -178,7 +180,14 @@ class InvokerReactive(
     logsfspcent = Try(logsfspcentraw.substring(0, logsfspcentraw.indexOf("%")).toInt).getOrElse(-1)
     logging.warn(
       this,
-      s"invoker fs space: '$rootfsraw ($rootfspcentraw($rootfspcent($rootfspecentmax)))', '$logsfsraw ($logsfspcentraw($logsfspcent($fspecentmax)))'")
+      s"invoker fs space: " +
+        s"'$rootfsraw ($rootfspcentraw($rootfspcent($rootfspecentmax)))', " +
+        s"'$logsfsraw ($logsfspcentraw($logsfspcent($fspecentmax)))', " +
+        s"invoker container pool: " +
+        s"freePoolSize: ${poolState.free} containers, " +
+        s"busyPoolSize: ${poolState.busy} containers, " +
+        s"prewarmedPoolSize: ${poolState.prewarmed} containers, " +
+        s"waiting messages: ${poolState.waiting}")
 
     namespaceBlacklist.refreshBlacklist()(ec, TransactionId.invoker).andThen {
       case Success(set) => {
@@ -235,8 +244,13 @@ class InvokerReactive(
     }.toList
   }
 
+  // failed to initialize reactive invoker:
+  // you cannot create an instance of [org.apache.openwhisk.core.containerpool.ContainerPool] explicitly using the constructor (new)
+  // you have to use one of the 'actorOf' factory methods to create a new actor
+  // you can't call any methods within the actor directly (as this would break actor encapsulation)
+  // you can only send messages to it and receive messages from it
   private val pool =
-    actorSystem.actorOf(ContainerPool.props(childFactory, poolConfig, activationFeed, prewarmingConfigs))
+    actorSystem.actorOf(ContainerPool.props(childFactory, poolConfig, activationFeed, prewarmingConfigs, poolState))
 
   /** Is called when an ActivationMessage is read from Kafka */
   def processActivationMessage(bytes: Array[Byte]): Future[Unit] = {
@@ -374,7 +388,8 @@ class InvokerReactive(
           isBlacklisted = namespaceBlacklist.isBlacklisted(instance.displayedName.getOrElse("")),
           hasDiskPressure = rootfspcent >= rootfspecentmax || logsfspcent >= fspecentmax,
           rootfspcent = rootfspcent,
-          logsfspcent = logsfspcent))
+          logsfspcent = logsfspcent,
+          running = poolState.busy + poolState.waiting))
       .andThen {
         case Failure(t) => logging.error(this, s"failed to ping the controller: $t")
       }
