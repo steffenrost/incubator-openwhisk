@@ -156,6 +156,56 @@ class InvokerReactive(
   private val authStore = WhiskAuthStore.datastore()
 
   private val namespaceBlacklist = new NamespaceBlacklist(authStore)
+
+  private val imageStoreConfig = loadConfigOrThrow[CouchDbConfig]("whisk.couchdb")
+  // config for invoker image monitor
+  case class ImageMonitorConfig(enabled: Boolean,
+                                cluster: String,
+                                staleTime: Int,
+                                writeInterval: Int,
+                                buildNo: String,
+                                deployDate: String)
+  private val imageMonitorConfigNamespace = "whisk.invoker.imagemonitor"
+  val imageMonitorConfig = loadConfig[ImageMonitorConfig](imageMonitorConfigNamespace).toOption
+  private val imageMonitorEnabled = imageMonitorConfig.exists(_.enabled)
+  private val imageMonitorCluster = imageMonitorConfig.map(_.cluster).getOrElse("")
+  private val imageMonitorStaleTime = imageMonitorConfig.map(_.staleTime).getOrElse(-1)
+  private val imageMonitorWriteInterval = imageMonitorConfig.map(_.writeInterval).getOrElse(-1)
+  private val imageMonitorBuildNo = imageMonitorConfig.map(_.buildNo).getOrElse("")
+  private val imageMonitorDeployDate = imageMonitorConfig.map(_.deployDate).getOrElse("")
+  logging.warn(
+    this,
+    s"imageStoreConfig : $imageStoreConfig, " +
+      s"imageMonitorEnabled: $imageMonitorEnabled, " +
+      s"imageMonitorCluster: $imageMonitorCluster, " +
+      s"imageMonitorStaleTime: $imageMonitorStaleTime, " +
+      s"imageMonitorWriteInterval: $imageMonitorWriteInterval, " +
+      s"imageMonitorBuildNo: $imageMonitorBuildNo, " +
+      s"imageMonitorDeployDate: $imageMonitorDeployDate")
+
+  private lazy val imageStore = new CouchDbRestClient(
+    imageStoreConfig.protocol,
+    imageStoreConfig.host,
+    imageStoreConfig.port,
+    imageStoreConfig.username,
+    imageStoreConfig.password,
+    imageStoreConfig.databaseFor[ImageMonitor])
+
+  private lazy val imageMonitor =
+    new ImageMonitor(
+      cluster = imageMonitorCluster,
+      invoker = instance.instance,
+      ip = instance.uniqueName.getOrElse(""),
+      pod = instance.displayedName.getOrElse(""),
+      fqname = instance.toString,
+      staleTime = imageMonitorStaleTime,
+      build = imageMonitorDeployDate,
+      buildNo = imageMonitorBuildNo,
+      imageStore = imageStore)
+
+  /** Ensure images preload was able to run by checking if invoker config has changed. */
+  def ensureImagePreload = if (imageMonitorEnabled) imageMonitor.sync else Future((true))
+
   private val rootfs = "/"
   private val logsfs = "/logs"
   private val fspcentmax = 85
@@ -187,6 +237,11 @@ class InvokerReactive(
         s"busyPoolSize: ${poolState.busy} containers, " +
         s"prewarmedPoolSize: ${poolState.prewarmed} containers, " +
         s"waiting messages: ${poolState.waiting}")
+
+    // write images to store if monitor is enabled and ready every nth minute
+    if (imageMonitorEnabled && imageMonitor.isReady && epochMinute % imageMonitorWriteInterval == 0) {
+      imageMonitor.write
+    }
 
     // run database query at the start of the schedule and every fifth minute
     if (epochMinute % 5 == 0 || firstrun) {
@@ -288,6 +343,9 @@ class InvokerReactive(
             .flatMap { action =>
               action.toExecutableWhiskAction match {
                 case Some(executable) =>
+                  if (imageMonitorEnabled && imageMonitor.isReady && executable.exec.pull) {
+                    imageMonitor.add(executable.exec.image.resolveImageName(), msg.action.fullPath.toString)
+                  }
                   pool ! Run(executable, msg)
                   Future.successful(())
                 case None =>
@@ -384,18 +442,21 @@ class InvokerReactive(
 
   private val healthProducer = msgProvider.getProducer(config)
   Scheduler.scheduleWaitAtMost(1.seconds)(() => {
-    healthProducer
-      .send(
-        "health",
-        PingMessage(
-          instance = instance,
-          isBlacklisted = namespaceBlacklist.isBlacklisted(instance.displayedName.getOrElse("")),
-          hasDiskPressure = rootfspcent >= fspcentmax || logsfspcent >= fspcentmax,
-          rootfspcent = rootfspcent,
-          logsfspcent = logsfspcent,
-          running = poolState.busy + poolState.waiting))
-      .andThen {
-        case Failure(t) => logging.error(this, s"failed to ping the controller: $t")
-      }
+    // ping only if monitor is ready when enabled
+    if (!imageMonitorEnabled || imageMonitor.isReady) {
+      healthProducer
+        .send(
+          "health",
+          PingMessage(
+            instance = instance,
+            isBlacklisted = namespaceBlacklist.isBlacklisted(instance.displayedName.getOrElse("")),
+            hasDiskPressure = rootfspcent >= fspcentmax || logsfspcent >= fspcentmax,
+            rootfspcent = rootfspcent,
+            logsfspcent = logsfspcent,
+            running = poolState.busy + poolState.waiting))
+        .andThen {
+          case Failure(t) => logging.error(this, s"failed to ping the controller: $t")
+        }
+    } else Future(())
   })
 }
