@@ -412,14 +412,15 @@ trait WhiskTriggersApi extends WhiskCollectionAPI {
   }
 
   /**
-   * Posts an action activation. Currently done by posting internally to the controller.
+   * Posts an action activation, retry in case of errors (eg TcpIdleTimeoutException).
+   * Currently done by posting internally to the controller.
    * TODO: use a proper path that does not route through HTTP.
    *
    * @param rule the name of the rule that is activated
    * @param args the arguments to post to the action
    * @return a future with the HTTP response from the action activation
    */
-  private def postActivation(user: Identity, rule: ReducedRule, args: JsObject)(
+  private def postActivation(user: Identity, rule: ReducedRule, args: JsObject, retries: Int = 3)(
     implicit transid: TransactionId): Future[HttpResponse] = {
     // Build the url to invoke an action mapped to the rule
     val actionUrl = baseControllerPath / rule.action.path.root.asString / "actions"
@@ -436,7 +437,13 @@ trait WhiskTriggersApi extends WhiskCollectionAPI {
           headers = List(Authorization(creds), transid.toHeader),
           entity = HttpEntity(MediaTypes.`application/json`, args.compactPrint))
 
-        singleRequest(request)
+        singleRequest(request).recoverWith {
+          case t if retries > 0 =>
+            logging.warn(
+              this,
+              s"trigger-fired action '${rule.action}' failed to invoke with $t, retry ($retries retries left)..")
+            postActivation(user, rule, args, retries - 1)
+        }
       }
       .getOrElse(Future.failed(new NoCredentialsAvailable()))
   }
